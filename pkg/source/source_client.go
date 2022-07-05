@@ -83,14 +83,6 @@ func CheckResponseCode(respCode int, allowed []int) error {
 	return UnexpectedStatusCodeError{allowed, respCode}
 }
 
-func IsResourceNotReachableError(err error) bool {
-	return errors.Is(err, ErrResourceNotReachable)
-}
-
-func IsNoClientFoundError(err error) bool {
-	return errors.Is(err, ErrNoClientFound)
-}
-
 const (
 	UnknownSourceFileLen = -2
 )
@@ -101,20 +93,8 @@ type ResourceClient interface {
 	// return source.UnknownSourceFileLen if response status is not StatusOK and StatusPartialContent
 	GetContentLength(request *Request) (int64, error)
 
-	// IsSupportRange checks if resource supports breakpoint continuation
-	// return false if response status is not StatusPartialContent
-	IsSupportRange(request *Request) (bool, error)
-
-	// IsExpired checks if a resource received or stored is the same.
-	// return false and non-nil err to prevent the source from exploding if
-	// fails to get the result, it is considered that the source has not expired
-	IsExpired(request *Request, info *ExpireInfo) (bool, error)
-
 	// Download downloads from source
 	Download(request *Request) (*Response, error)
-
-	// GetLastModified gets last modified timestamp milliseconds of resource
-	GetLastModified(request *Request) (int64, error)
 }
 
 // ResourceMetadataGetter defines the API interface to get metadata for special resource
@@ -148,8 +128,6 @@ type clientManager struct {
 	clients   map[string]ResourceClient
 	pluginDir string
 }
-
-var _ ClientManager = (*clientManager)(nil)
 
 var _defaultManager = NewManager()
 
