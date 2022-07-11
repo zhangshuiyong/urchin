@@ -32,6 +32,7 @@ enum Code{
   // common response error 1000-1999
   // client can be migrated to another scheduler/CDN
   ResourceLacked = 1000;
+  BackToSourceAborted = 1001;
   BadRequest = 1400;
   PeerTaskNotFound = 1404;
   UnknownError = 1500;
@@ -162,9 +163,9 @@ message ExtendAttribute{
   // task response header, eg: HTTP Response Header
   map<string, string> header = 1;
   // task response code, eg: HTTP Status Code
-  //int32 code = 2;
+  int32 status_code = 2;
   // task response status, eg: HTTP Status
-  //string status = 3;
+  string status = 3;
 }
 
 message PiecePacket{

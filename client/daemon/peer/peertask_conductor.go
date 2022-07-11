@@ -30,6 +30,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"d7y.io/dragonfly/v2/client/config"
 	"d7y.io/dragonfly/v2/client/daemon/metrics"
@@ -40,6 +42,7 @@ import (
 	"d7y.io/dragonfly/v2/pkg/digest"
 	"d7y.io/dragonfly/v2/pkg/idgen"
 	"d7y.io/dragonfly/v2/pkg/rpc/base"
+	"d7y.io/dragonfly/v2/pkg/rpc/errordetails"
 	"d7y.io/dragonfly/v2/pkg/rpc/scheduler"
 	schedulerclient "d7y.io/dragonfly/v2/pkg/rpc/scheduler/client"
 	"d7y.io/dragonfly/v2/pkg/source"
@@ -162,6 +165,8 @@ type peerTaskConductor struct {
 	// subtask only
 	parent *peerTaskConductor
 	rg     *util.Range
+
+	sourceErrorStatus *status.Status
 }
 
 func (ptm *peerTaskManager) newPeerTaskConductor(
@@ -438,6 +443,10 @@ func (pt *peerTaskConductor) Context() context.Context {
 
 func (pt *peerTaskConductor) Log() *logger.SugaredLoggerOnWith {
 	return pt.SugaredLoggerOnWith
+}
+
+func (pt *peerTaskConductor) UpdateSourceErrorStatus(st *status.Status) {
+	pt.sourceErrorStatus = st
 }
 
 func (pt *peerTaskConductor) cancel(code base.Code, reason string) {
@@ -796,6 +805,16 @@ func (pt *peerTaskConductor) isExitPeerPacketCode(pp *scheduler.PeerPacket) bool
 		// 6xxx
 		pt.failedCode = pp.Code
 		pt.failedReason = fmt.Sprintf("receive exit peer packet with code %d", pp.Code)
+		return true
+	case base.Code_BackToSourceAborted:
+		st := status.Newf(codes.Aborted, "response is not valid")
+		st, err := st.WithDetails(pp.GetSourceError())
+		if err != nil {
+			pt.Errorf("convert source error details error: %s", err.Error())
+			return false
+		}
+
+		pt.sourceErrorStatus = st
 		return true
 	}
 	return false
@@ -1544,22 +1563,36 @@ func (pt *peerTaskConductor) fail() {
 	ctx := trace.ContextWithSpan(context.Background(), trace.SpanFromContext(pt.ctx))
 	peerResultCtx, peerResultSpan := tracer.Start(ctx, config.SpanReportPeerResult)
 	defer peerResultSpan.End()
-	err = pt.schedulerClient.ReportPeerResult(
-		peerResultCtx,
-		&scheduler.PeerResult{
-			TaskId:          pt.GetTaskID(),
-			PeerId:          pt.GetPeerID(),
-			SrcIp:           pt.peerTaskManager.host.Ip,
-			SecurityDomain:  pt.peerTaskManager.host.SecurityDomain,
-			Idc:             pt.peerTaskManager.host.Idc,
-			Url:             pt.request.Url,
-			ContentLength:   pt.GetContentLength(),
-			Traffic:         pt.GetTraffic(),
-			TotalPieceCount: pt.GetTotalPieces(),
-			Cost:            uint32(end.Sub(pt.startTime).Milliseconds()),
-			Success:         false,
-			Code:            pt.failedCode,
-		})
+
+	var sourceError *errordetails.SourceError
+	if pt.sourceErrorStatus != nil {
+		for _, detail := range pt.sourceErrorStatus.Details() {
+			switch d := detail.(type) {
+			case *errordetails.SourceError:
+				sourceError = d
+			}
+		}
+	}
+	peerResult := &scheduler.PeerResult{
+		TaskId:          pt.GetTaskID(),
+		PeerId:          pt.GetPeerID(),
+		SrcIp:           pt.peerTaskManager.host.Ip,
+		SecurityDomain:  pt.peerTaskManager.host.SecurityDomain,
+		Idc:             pt.peerTaskManager.host.Idc,
+		Url:             pt.request.Url,
+		ContentLength:   pt.GetContentLength(),
+		Traffic:         pt.GetTraffic(),
+		TotalPieceCount: pt.GetTotalPieces(),
+		Cost:            uint32(end.Sub(pt.startTime).Milliseconds()),
+		Success:         false,
+		Code:            pt.failedCode,
+	}
+	if sourceError != nil {
+		peerResult.ErrorDetail = &scheduler.PeerResult_SourceError{
+			SourceError: sourceError,
+		}
+	}
+	err = pt.schedulerClient.ReportPeerResult(peerResultCtx, peerResult)
 	if err != nil {
 		peerResultSpan.RecordError(err)
 		pt.Log().Errorf("step 3: report fail peer result, error: %v", err)
@@ -1634,4 +1667,11 @@ func (pt *peerTaskConductor) sendPieceResult(pr *scheduler.PieceResult) error {
 	err := pt.peerPacketStream.Send(pr)
 	pt.sendPieceResultLock.Unlock()
 	return err
+}
+
+func (pt *peerTaskConductor) getFailedError() error {
+	if pt.sourceErrorStatus != nil {
+		return pt.sourceErrorStatus.Err()
+	}
+	return fmt.Errorf("peer task failed: %d/%s", pt.failedCode, pt.failedReason)
 }

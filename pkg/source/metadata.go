@@ -17,7 +17,9 @@
 package source
 
 type Metadata struct {
-	Header Header
+	Status     string
+	StatusCode int
+	Header     Header
 	// SupportRange indicates source supports partial download, like Range in http request
 	SupportRange bool
 	// ContentLength indicates the current content length for the target request
@@ -27,4 +29,7 @@ type Metadata struct {
 	//      Content-Range: bytes 0-9/2443
 	// 2443 is the TotalContentLength, 10 is the ContentLength
 	TotalContentLength int64
+
+	Validate  func() error
+	Temporary func() bool
 }
