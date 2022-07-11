@@ -23,6 +23,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"d7y.io/dragonfly/v2/pkg/slices"
 )
 
 var defaultHTTPClient = &http.Client{
@@ -41,9 +43,12 @@ var defaultHTTPClient = &http.Client{
 	},
 }
 
-var (
-	notTemporaryStatusCode = []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusProxyAuthRequired}
-)
+var notTemporaryStatusCode = []int{
+	http.StatusUnauthorized,
+	http.StatusForbidden,
+	http.StatusNotFound,
+	http.StatusProxyAuthRequired,
+}
 
 func init() {
 	Register("http", &HTTP{client: defaultHTTPClient})
@@ -78,5 +83,14 @@ func (h *HTTP) DownloadWithContext(ctx context.Context, input *DownloadInput) (*
 		output.Validate = fmt.Errorf("status code is %d", resp.StatusCode)
 	}
 
-	return &DownloadOutput{}, nil
+	if slices.Contains(notTemporaryStatusCode, resp.StatusCode) {
+		output.Temporary = true
+	}
+
+	return &DownloadOutput{
+		Body:       resp.Body,
+		Status:     resp.Status,
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header,
+	}, nil
 }
