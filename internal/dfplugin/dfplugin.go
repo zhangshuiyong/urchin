@@ -36,6 +36,9 @@ const (
 
 	// PluginMetaKeyName indicates the name of a plugin
 	PluginMetaKeyName = "name"
+
+	// PluginMetaKeyScheme indicates the scheme of a resource plugin
+	PluginMetaKeyScheme = "scheme"
 )
 
 var PluginFormatExpr = regexp.MustCompile("d7y-(resource|manager|scheduler)-plugin-([a-z0-9]+).so")
