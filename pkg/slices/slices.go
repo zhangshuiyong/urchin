@@ -14,30 +14,15 @@
  * limitations under the License.
  */
 
-package math
+package slices
 
-import "golang.org/x/exp/constraints"
-
-// Max returns the maximum of values.
-func Max[T constraints.Ordered](values ...T) T {
-	max := values[0]
-	for _, value := range values {
-		if value > max {
-			max = value
+// Contains returns true if an element is present in a collection.
+func Contains[T comparable](s []T, e T) bool {
+	for _, v := range s {
+		if v == e {
+			return true
 		}
 	}
 
-	return max
-}
-
-// Min returns the minimum of values.
-func Min[T constraints.Ordered](values ...T) T {
-	min := values[0]
-	for _, value := range values {
-		if value < min {
-			min = value
-		}
-	}
-
-	return min
+	return false
 }

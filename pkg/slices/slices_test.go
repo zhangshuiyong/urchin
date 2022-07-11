@@ -14,30 +14,18 @@
  * limitations under the License.
  */
 
-package math
+package slices
 
-import "golang.org/x/exp/constraints"
+import (
+	"testing"
 
-// Max returns the maximum of values.
-func Max[T constraints.Ordered](values ...T) T {
-	max := values[0]
-	for _, value := range values {
-		if value > max {
-			max = value
-		}
-	}
+	"github.com/stretchr/testify/assert"
+)
 
-	return max
-}
-
-// Min returns the minimum of values.
-func Min[T constraints.Ordered](values ...T) T {
-	min := values[0]
-	for _, value := range values {
-		if value < min {
-			min = value
-		}
-	}
-
-	return min
+func TestContains(t *testing.T) {
+	assert := assert.New(t)
+	assert.True(Contains([]int{1, 2, 3}, 1))
+	assert.False(Contains([]int{1, 2, 3}, 4))
+	assert.True(Contains([]string{"a", "b", "c"}, "a"))
+	assert.False(Contains([]string{"a", "b", "c"}, "d"))
 }
