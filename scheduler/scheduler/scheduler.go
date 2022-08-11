@@ -23,6 +23,9 @@ import (
 	"sort"
 	"time"
 
+	"d7y.io/dragonfly/v2/scheduler/storage"
+	"d7y.io/dragonfly/v2/scheduler/training"
+
 	commonv1 "d7y.io/api/pkg/apis/common/v1"
 	schedulerv1 "d7y.io/api/pkg/apis/scheduler/v1"
 
@@ -52,13 +55,17 @@ type scheduler struct {
 
 	// Scheduler dynamic configuration.
 	dynconfig config.DynconfigInterface
+
+	// LinearProcess
+	linearProcess *training.LinearTraining
 }
 
-func New(cfg *config.SchedulerConfig, dynconfig config.DynconfigInterface, pluginDir string) Scheduler {
+func New(cfg *config.SchedulerConfig, dynconfig config.DynconfigInterface, pluginDir string, storage storage.Storage) Scheduler {
 	return &scheduler{
-		evaluator: evaluator.New(cfg.Algorithm, pluginDir),
-		config:    cfg,
-		dynconfig: dynconfig,
+		evaluator:     evaluator.New(cfg.Algorithm, pluginDir),
+		config:        cfg,
+		dynconfig:     dynconfig,
+		linearProcess: training.NewLinearTraining(storage),
 	}
 }
 

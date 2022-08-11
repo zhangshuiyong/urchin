@@ -174,15 +174,15 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 		return nil, err
 	}
 
-	// Initialize scheduler.
-	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir())
-
 	// Initialize Storage.
 	storage, err := storage.New(d.DataDir())
 	if err != nil {
 		return nil, err
 	}
 	s.storage = storage
+
+	// Initialize scheduler.
+	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir(), storage)
 
 	// Initialize scheduler service.
 	service := service.New(cfg, resource, scheduler, dynconfig, s.storage)
