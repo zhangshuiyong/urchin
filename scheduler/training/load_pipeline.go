@@ -59,6 +59,6 @@ func (l *Loading) LoadCall(ctx context.Context, in chan *pipeline.Request) (*pip
 
 func NewLoadingStep() pipeline.Step {
 	l := Loading{}
-	l.StepInfra = pipeline.New("Loading", l.LoadCall)
+	//l.StepInfra = pipeline.New("Loading", l.LoadCall)
 	return l
 }

@@ -2,23 +2,18 @@ package training
 
 import (
 	"d7y.io/dragonfly/v2/scheduler/training/models"
+	"fmt"
 	"github.com/sjwhitworth/golearn/base"
 )
 
 // TrainProcess fit and evaluate models for each parent peer.
-func TrainProcess(trainMap map[float64]*base.DenseInstances, to *TrainOptions, modelMap map[float64]*models.LinearRegression) error {
-	for key, value := range trainMap {
-		if _, ok := modelMap[key]; !ok {
-			model := models.NewLinearRegression()
-			modelMap[key] = model
-		}
+func TrainProcess(instance *base.DenseInstances, to *TrainOptions) (*models.LinearRegression, error) {
+	model := models.NewLinearRegression()
 
-		model := modelMap[key]
-		train, _ := base.InstancesTrainTestSplit(value, to.TestPercent)
-		err := model.Fit(train, to.LearningRate)
-		if err != nil {
-			return err
-		}
+	err := model.Fit(instance, to.LearningRate)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	fmt.Println(model.RegressionCoefficients)
+	return model, nil
 }

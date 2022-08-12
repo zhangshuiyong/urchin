@@ -19,8 +19,8 @@ type Evaluating struct {
 }
 
 func (eva *Evaluating) GetSource(req *pipeline.Request) error {
-	source := req.Data.(map[float64]*base.DenseInstances)
-	err := TrainProcess(source, eva.to, eva.model)
+	source := req.Data.(*base.DenseInstances)
+	_, err := TrainProcess(source, eva.to)
 	if err != nil {
 		return err
 	}

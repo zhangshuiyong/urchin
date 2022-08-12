@@ -9,7 +9,7 @@ import (
 	"github.com/sjwhitworth/golearn/base"
 )
 
-// Train provides training functions.
+// Data Train provides training functions.
 type Data struct {
 	Reader io.ReadCloser
 	// currentRecordLine capacity of lines which training has.
@@ -39,7 +39,7 @@ func (d *Data) LoadRecord(reader io.ReadCloser) (*base.DenseInstances, error) {
 		r := bufio.NewReader(reader)
 		buf := new(bytes.Buffer)
 		for i := 0; i < d.Options.MaxBufferLine; i++ {
-			line, _, err := r.ReadLine()
+			line, err := r.ReadString('\n')
 			if err != nil && err != io.EOF {
 				return nil, err
 			}
@@ -47,7 +47,7 @@ func (d *Data) LoadRecord(reader io.ReadCloser) (*base.DenseInstances, error) {
 			if err == io.EOF {
 				break
 			}
-			buf.Write(line)
+			buf.Write([]byte(line))
 			d.CurrentRecordLine += 1
 		}
 		if buf.Len() == 0 {
@@ -65,8 +65,7 @@ func (d *Data) LoadRecord(reader io.ReadCloser) (*base.DenseInstances, error) {
 }
 
 // PreProcess load and clean data before training.
-func (d *Data) PreProcess() (map[float64]*base.DenseInstances, error) {
-	result := make(map[float64]*base.DenseInstances, 0)
+func (d *Data) PreProcess() (*base.DenseInstances, error) {
 	reader := d.Reader
 	instance, err := d.LoadRecord(reader)
 	if err != nil {
@@ -77,17 +76,13 @@ func (d *Data) PreProcess() (map[float64]*base.DenseInstances, error) {
 	}
 	// Change to Zero, for next loop
 	d.CurrentRecordLine = 0
-	effectiveArr, err := MissingValue(instance)
+	err = MissingValue(instance)
 	if err != nil {
 		return nil, err
 	}
-	err = Normalize(instance, effectiveArr, false)
+	err = Normalize(instance, false)
 	if err != nil {
 		return nil, err
 	}
-	err = Split(instance, effectiveArr, result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return instance, nil
 }

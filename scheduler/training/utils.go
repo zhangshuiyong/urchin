@@ -50,26 +50,27 @@ func Split(instance *base.DenseInstances, rows []int, result map[float64]*base.D
 }
 
 // Normalize using z-score or max_min normalization to normalize float64 filed.
-func Normalize(instance *base.DenseInstances, rows []int, Zscore bool) error {
+func Normalize(instance *base.DenseInstances, Zscore bool) error {
+	_, row := instance.Size()
 	attributes := instance.AllAttributes()
 	if Zscore {
 		meanValue := make([]float64, NormalizedFieldNum)
 		stdValue := make([]float64, NormalizedFieldNum)
 		for i := len(attributes) - NormalizedFieldNum; i < len(attributes); i++ {
 			attrSpec, _ := instance.GetAttribute(attributes[i])
-			for j := 0; j < len(rows); j++ {
-				x := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[j]))
+			for j := 0; j < row; j++ {
+				x := base.UnpackBytesToFloat(instance.Get(attrSpec, j))
 				meanValue[i+NormalizedFieldNum-len(attributes)] += x
 			}
 		}
 		for i := 0; i < NormalizedFieldNum; i++ {
-			meanValue[i] = meanValue[i] / float64(len(rows))
+			meanValue[i] = meanValue[i] / float64(row)
 		}
 
 		for i := len(attributes) - NormalizedFieldNum; i < len(attributes); i++ {
 			attrSpec, _ := instance.GetAttribute(attributes[i])
-			for j := 0; j < len(rows); j++ {
-				x := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[j]))
+			for j := 0; j < row; j++ {
+				x := base.UnpackBytesToFloat(instance.Get(attrSpec, j))
 				stdValue[i+NormalizedFieldNum-len(attributes)] += math.Pow(x-meanValue[i+NormalizedFieldNum-len(attributes)], 2)
 			}
 		}
@@ -82,10 +83,10 @@ func Normalize(instance *base.DenseInstances, rows []int, Zscore bool) error {
 
 		for i := len(attributes) - NormalizedFieldNum; i < len(attributes); i++ {
 			attrSpec, _ := instance.GetAttribute(attributes[i])
-			for j := 0; j < len(rows); j++ {
-				x := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[j]))
+			for j := 0; j < row; j++ {
+				x := base.UnpackBytesToFloat(instance.Get(attrSpec, j))
 				bytes := base.PackFloatToBytes((x - meanValue[i+NormalizedFieldNum-len(attributes)]) / stdValue[i+NormalizedFieldNum-len(attributes)])
-				instance.Set(attrSpec, rows[j], bytes)
+				instance.Set(attrSpec, j, bytes)
 			}
 		}
 		return nil
@@ -97,8 +98,8 @@ func Normalize(instance *base.DenseInstances, rows []int, Zscore bool) error {
 	}
 	for i := len(attributes) - NormalizedFieldNum; i < len(attributes); i++ {
 		attrSpec, _ := instance.GetAttribute(attributes[i])
-		for j := 0; j < len(rows); j++ {
-			x := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[j]))
+		for j := 0; j < row; j++ {
+			x := base.UnpackBytesToFloat(instance.Get(attrSpec, j))
 			if x > maxValue[i+NormalizedFieldNum-len(attributes)] {
 				maxValue[i+NormalizedFieldNum-len(attributes)] = x
 			}
@@ -112,32 +113,45 @@ func Normalize(instance *base.DenseInstances, rows []int, Zscore bool) error {
 	}
 	for i := len(attributes) - NormalizedFieldNum; i < len(attributes); i++ {
 		attrSpec, _ := instance.GetAttribute(attributes[i])
-		for j := 0; j < len(rows); j++ {
-			x := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[j]))
+		for j := 0; j < row; j++ {
+			x := base.UnpackBytesToFloat(instance.Get(attrSpec, j))
 			bytes := base.PackFloatToBytes((x - minValue[i+NormalizedFieldNum-len(attributes)]) / maxValue[i+NormalizedFieldNum-len(attributes)])
-			instance.Set(attrSpec, rows[j], bytes)
+			instance.Set(attrSpec, j, bytes)
 		}
 	}
 	return nil
 }
 
-// MissingValue return effective rows in order to droping missing value.
-func MissingValue(instances *base.DenseInstances) ([]int, error) {
+// MissingValue use effective data to replace missing data.
+func MissingValue(instances *base.DenseInstances) error {
 	cal, row := instances.Size()
 	attributes := instances.AllAttributes()
-	effectiveRow := make([]int, 0)
+	effectiveData := make([]float64, cal)
+	for i := 0; i < cal; i++ {
+		effectiveData[i] = -1
+	}
+	counter := 0
 	for i := 0; i < row; i++ {
-		drop := false
+		for j := 0; j < cal; j++ {
+			attrSpec, _ := instances.GetAttribute(attributes[j])
+			x := base.UnpackBytesToFloat(instances.Get(attrSpec, i))
+			if x != -1 && effectiveData[j] == -1 {
+				effectiveData[j] = x
+				counter += 1
+			}
+		}
+		if counter == cal-1 {
+			break
+		}
+	}
+
+	for i := 0; i < row; i++ {
 		for j := 0; j < cal; j++ {
 			attrSpec, _ := instances.GetAttribute(attributes[j])
 			if base.UnpackBytesToFloat(instances.Get(attrSpec, i)) == -1 {
-				drop = true
-				break
+				instances.Set(attrSpec, i, base.PackFloatToBytes(effectiveData[j]))
 			}
 		}
-		if !drop {
-			effectiveRow = append(effectiveRow, i)
-		}
 	}
-	return effectiveRow, nil
+	return nil
 }
