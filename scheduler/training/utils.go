@@ -123,8 +123,8 @@ func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, erro
 	buf := new(bytes.Buffer)
 
 	for i := 0; i < loopTimes; i++ {
-		line, _, err := r.ReadLine()
-		//line, err := r.ReadString('\n')
+		//line, _, err := r.ReadLine()
+		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -132,7 +132,7 @@ func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, erro
 		if err == io.EOF {
 			break
 		}
-		buf.Write(line)
+		buf.Write([]byte(line))
 	}
 	if buf.Len() == 0 {
 		return nil, errors.New("file empty")
