@@ -29,11 +29,13 @@ var (
 
 func init() {
 	mapStep = map[string]pipeline.StepConstruct{
-		"Training":   NewTrainStep,
-		"Evaluating": NewEvalStep,
-		"Saving":     NewSavingStep,
+		"LoadingData": NewLoadStep,
+		"Training":    NewTrainStep,
+		"LoadingTest": NewLoadStep,
+		"Evaluating":  NewEvaStep,
+		"Saving":      NewSavingStep,
 	}
-	order = []string{"Training", "Evaluating", "Saving"}
+	order = []string{"LoadingData", "Training", "LoadingTest", "Evaluating", "Saving"}
 }
 
 func LinearDag() (dag.DAG[pipeline.StepConstruct], error) {

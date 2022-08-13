@@ -1,53 +1,14 @@
 package training
 
 import (
+	"bufio"
+	"bytes"
+	"errors"
+	"io"
 	"math"
-	"strconv"
 
 	"github.com/sjwhitworth/golearn/base"
 )
-
-// Split divide dataset by ParentID.
-func Split(instance *base.DenseInstances, rows []int, result map[float64]*base.DenseInstances) error {
-	attributes := instance.AllAttributes()
-	attrSpec, err := instance.GetAttribute(attributes[1])
-	if err != nil {
-		return err
-	}
-	for i := 0; i < len(rows); i++ {
-		ID := base.UnpackBytesToFloat(instance.Get(attrSpec, rows[i]))
-		if _, ok := result[ID]; !ok {
-			result[ID] = base.NewDenseInstances()
-			for j := 2; j < len(attributes); j++ {
-				if j == len(attributes)-1 {
-					label := base.NewFloatAttribute("label")
-					result[ID].AddAttribute(label)
-					err := result[ID].AddClassAttribute(label)
-					if err != nil {
-						return err
-					}
-				} else {
-					result[ID].AddAttribute(base.NewFloatAttribute("float" + strconv.Itoa(j-2)))
-				}
-			}
-		}
-		_, length := result[ID].Size()
-		err := result[ID].Extend(1)
-		if err != nil {
-			return err
-		}
-		for j := 2; j < len(attributes); j++ {
-			attrSp, err := instance.GetAttribute(attributes[j])
-			x := instance.Get(attrSp, rows[i])
-			if err != nil {
-				return err
-			}
-			attrSpt, _ := result[ID].GetAttribute(result[ID].AllAttributes()[j-2])
-			result[ID].Set(attrSpt, length, x)
-		}
-	}
-	return nil
-}
 
 // Normalize using z-score or max_min normalization to normalize float64 filed.
 func Normalize(instance *base.DenseInstances, Zscore bool) error {
@@ -154,4 +115,33 @@ func MissingValue(instances *base.DenseInstances) error {
 		}
 	}
 	return nil
+}
+
+// LoadRecord read record from file and transform it to instance.
+func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, error) {
+	r := bufio.NewReader(reader)
+	buf := new(bytes.Buffer)
+
+	for i := 0; i < loopTimes; i++ {
+		line, _, err := r.ReadLine()
+		//line, err := r.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		if err == io.EOF {
+			break
+		}
+		buf.Write(line)
+	}
+	if buf.Len() == 0 {
+		return nil, errors.New("file empty")
+	}
+
+	strReader := bytes.NewReader(buf.Bytes())
+	instance, err := base.ParseCSVToInstancesFromReader(strReader, false)
+	if err != nil {
+		return nil, err
+	}
+	return instance, nil
 }

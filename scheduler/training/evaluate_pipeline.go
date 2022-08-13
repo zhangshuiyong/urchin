@@ -7,29 +7,24 @@ import (
 	"d7y.io/dragonfly/v2/scheduler/training/models"
 
 	"d7y.io/dragonfly/v2/pkg/pipeline"
-
-	"github.com/sjwhitworth/golearn/base"
 )
 
 type Evaluating struct {
-	// model preserve
-	model map[float64]*models.LinearRegression
-	to    *TrainOptions
+	eval *Eval
 	*pipeline.StepInfra
 }
 
 func (eva *Evaluating) GetSource(req *pipeline.Request) error {
-	source := req.Data.(*base.DenseInstances)
-	_, err := TrainProcess(source, eva.to)
-	if err != nil {
-		return err
+	model := req.KeyVal[OutPutModel].(*models.LinearRegression)
+	if model == nil {
+		return fmt.Errorf("lose model")
 	}
-
+	// TODO
+	//model.Predict()
 	return nil
 }
 
 func (eva *Evaluating) Serve(req *pipeline.Request, out chan *pipeline.Request) error {
-	eva.to = NewTrainOptions()
 	err := eva.GetSource(req)
 	if err != nil {
 		return err
@@ -37,7 +32,7 @@ func (eva *Evaluating) Serve(req *pipeline.Request, out chan *pipeline.Request) 
 	return nil
 }
 
-func (eva *Evaluating) EvalCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
+func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -45,8 +40,7 @@ func (eva *Evaluating) EvalCall(ctx context.Context, in chan *pipeline.Request, 
 		case val := <-in:
 			if val == nil {
 				out <- &pipeline.Request{
-					Data: eva.model,
-					// TODO
+
 					KeyVal: nil,
 				}
 				return nil
@@ -59,8 +53,8 @@ func (eva *Evaluating) EvalCall(ctx context.Context, in chan *pipeline.Request, 
 	}
 }
 
-func NewEvalStep() pipeline.Step {
-	e := Evaluating{}
-	e.StepInfra = pipeline.New("Evaluating", e.EvalCall)
-	return e
+func NewEvaStep() pipeline.Step {
+	eva := Evaluating{}
+	eva.StepInfra = pipeline.New("evaluating", eva.evaCall)
+	return eva
 }

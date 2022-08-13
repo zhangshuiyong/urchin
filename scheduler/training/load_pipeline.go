@@ -1,64 +1,161 @@
 package training
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
+	"math"
+	"time"
+
+	"d7y.io/dragonfly/v2/scheduler/storage"
 
 	"d7y.io/dragonfly/v2/pkg/pipeline"
 )
 
 type Loading struct {
+	dataInstance *Data
 	*pipeline.StepInfra
 }
 
-// GetSource actually function.
-func (load *Loading) GetSource(req *pipeline.Request) (*pipeline.Request, error) {
-	source := req.Data.([]byte)
+type GetSource func(req *pipeline.Request) (*pipeline.Request, error)
 
-	var result map[float64]*LinearModel
-	dec := gob.NewDecoder(bytes.NewBuffer(source))
-	err := dec.Decode(&result)
+// GetSource actually function.
+func (ld *Loading) GetDataSource(req *pipeline.Request) (*pipeline.Request, error) {
+	if ld.dataInstance.TotalDataRecordLine == 0 {
+		return nil, nil
+	}
+	result, err := ld.dataInstance.PreProcess()
 	if err != nil {
 		return nil, err
 	}
 
+	req.KeyVal[Reader] = ld.dataInstance.Reader
 	return &pipeline.Request{
 		Data:   result,
 		KeyVal: req.KeyVal,
 	}, nil
 }
 
-// Serve interface.
-func (load *Loading) Serve(req *pipeline.Request) (*pipeline.Request, error) {
-	return load.GetSource(req)
+func (ld *Loading) NewData(req *pipeline.Request) error {
+	store := req.Data.(storage.Storage)
+	reader, err := store.Open()
+	dataInstance, err := New(reader)
+	if err != nil {
+		return err
+	}
+	ld.dataInstance = dataInstance
+
+	total := store.Count()
+	ld.dataInstance.TotalDataRecordLine = int64(math.Ceil(float64(total) * ld.dataInstance.Options.TestPercent))
+	ld.dataInstance.TotalTestRecordLine = total - ld.dataInstance.TotalDataRecordLine
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-// TODO
-func (l *Loading) LoadCall(ctx context.Context, in chan *pipeline.Request) (*pipeline.Request, error) {
-	for {
-		// TODO out change to the answer struct
-		out := &pipeline.Request{}
-		var err error
+func (ld *Loading) Process(req *pipeline.Request, out chan *pipeline.Request, gs GetSource) error {
+	// limit the send rate
+	ticker := time.NewTicker(LimitSendRate * time.Second)
 
+loop:
+	for {
+		select {
+		case <-ticker.C:
+			source, err := gs(req)
+			if err != nil {
+				return err
+			}
+			if source == nil {
+				close(out)
+				break loop
+			}
+
+			out <- source
+		}
+	}
+	ticker.Stop()
+	return nil
+}
+
+func (ld *Loading) ProcessData(req *pipeline.Request, out chan *pipeline.Request) error {
+	err := ld.NewData(req)
+	if err != nil {
+		return err
+	}
+
+	err = ld.Process(req, out, ld.GetDataSource)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ld *Loading) GetTestSource(req *pipeline.Request) (*pipeline.Request, error) {
+	if ld.dataInstance.TotalTestRecordLine == 0 {
+		return nil, nil
+	}
+	// TODO
+	result, err := ld.dataInstance.PreProcess()
+	if err != nil {
+		return nil, err
+	}
+
+	req.KeyVal[Reader] = ld.dataInstance.Reader
+	return &pipeline.Request{
+		Data:   result,
+		KeyVal: req.KeyVal,
+	}, nil
+}
+
+func (ld *Loading) ProcessTest(req *pipeline.Request, out chan *pipeline.Request) error {
+	defer func() {
+		// TODO error handle
+		ld.dataInstance.Reader.Close()
+	}()
+
+	err := ld.Process(req, out, ld.GetTestSource)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Serve interface.
+func (ld *Loading) Serve(req *pipeline.Request, out chan *pipeline.Request) error {
+	switch req.KeyVal[LoadType] {
+	case LoadData:
+		err := ld.ProcessData(req, out)
+		if err != nil {
+			return err
+		}
+	case LoadTest:
+		err := ld.ProcessTest(req, out)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ld *Loading) LoadCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
+	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("loading process has been canceled")
+			return fmt.Errorf("training process has been canceled")
 		case val := <-in:
 			if val == nil {
-				return out, nil
+				return nil
 			}
-			out, err = l.Serve(val)
+			err := ld.Serve(val, out)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 }
 
-func NewLoadingStep() pipeline.Step {
-	l := Loading{}
-	//l.StepInfra = pipeline.New("Loading", l.LoadCall)
-	return l
+func NewLoadStep() pipeline.Step {
+	ld := Loading{}
+	ld.StepInfra = pipeline.New("Loading", ld.LoadCall)
+	return ld
 }

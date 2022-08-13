@@ -20,17 +20,14 @@ const (
 	InitSum = 0.0
 )
 
-// TODO wait to move, only serve for local test
 const (
-	// DefaultDir default dir of record file.
-	DefaultDir = "/tmp"
-
-	// DefaultRecord default file name of record file.
-	DefaultRecord = "record.csv"
+	LimitSendRate = 1
 )
 
 const (
-	Instance = "instance"
-	BaseDir  = "baseDir"
-	FileName = "fileName"
+	Reader      = "reader"
+	LoadType    = "load_type"
+	LoadData    = "load_data"
+	LoadTest    = "load_test"
+	OutPutModel = "output_model"
 )

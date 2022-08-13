@@ -1,9 +1,6 @@
 package training
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"io"
 
 	"github.com/sjwhitworth/golearn/base"
@@ -13,8 +10,9 @@ import (
 type Data struct {
 	Reader io.ReadCloser
 	// currentRecordLine capacity of lines which training has.
-	CurrentRecordLine int
-	Options           *DataOptions
+	TotalDataRecordLine int64
+	TotalTestRecordLine int64
+	Options             *DataOptions
 }
 
 // New return a Training instance.
@@ -24,6 +22,7 @@ func New(reader io.ReadCloser, option ...DataOptionFunc) (*Data, error) {
 		Options: &DataOptions{
 			MaxBufferLine: DefaultMaxBufferLine,
 			MaxRecordLine: DefaultMaxRecordLine,
+			TestPercent:   TestSetPercent,
 		},
 	}
 	for _, o := range option {
@@ -33,53 +32,29 @@ func New(reader io.ReadCloser, option ...DataOptionFunc) (*Data, error) {
 	return t, nil
 }
 
-// LoadRecord read record from file and transform it to instance.
-func (d *Data) LoadRecord(reader io.ReadCloser) (*base.DenseInstances, error) {
-	if d.CurrentRecordLine < d.Options.MaxRecordLine {
-		r := bufio.NewReader(reader)
-		buf := new(bytes.Buffer)
-		for i := 0; i < d.Options.MaxBufferLine; i++ {
-			line, err := r.ReadString('\n')
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-
-			if err == io.EOF {
-				break
-			}
-			buf.Write([]byte(line))
-			d.CurrentRecordLine += 1
-		}
-		if buf.Len() == 0 {
-			return nil, errors.New("file empty")
-		}
-
-		strReader := bytes.NewReader(buf.Bytes())
-		instance, err := base.ParseCSVToInstancesFromReader(strReader, false)
-		if err != nil {
-			return nil, err
-		}
-		return instance, nil
+func (d *Data) Min(maxRecord int, totalRecord int64) int {
+	if int64(maxRecord) > totalRecord {
+		d.TotalDataRecordLine = 0
+		return int(totalRecord)
 	}
-	return nil, nil
+	d.TotalTestRecordLine -= int64(maxRecord)
+	return maxRecord
 }
 
 // PreProcess load and clean data before training.
 func (d *Data) PreProcess() (*base.DenseInstances, error) {
-	reader := d.Reader
-	instance, err := d.LoadRecord(reader)
+	// TODO
+	loopTimes := d.Min(d.Options.MaxRecordLine, d.TotalDataRecordLine)
+	instance, err := LoadRecord(d.Reader, loopTimes)
 	if err != nil {
-		if err.Error() == "file empty" {
-			return nil, nil
-		}
 		return nil, err
 	}
-	// Change to Zero, for next loop
-	d.CurrentRecordLine = 0
+
 	err = MissingValue(instance)
 	if err != nil {
 		return nil, err
 	}
+
 	err = Normalize(instance, false)
 	if err != nil {
 		return nil, err
