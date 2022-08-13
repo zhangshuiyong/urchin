@@ -1,8 +1,14 @@
 package training
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
+
+	"d7y.io/dragonfly/v2/manager/types"
+
+	"github.com/sjwhitworth/golearn/base"
 
 	"d7y.io/dragonfly/v2/scheduler/training/models"
 
@@ -10,7 +16,8 @@ import (
 )
 
 type Evaluating struct {
-	eval *Eval
+	eval  *Eval
+	model *models.LinearRegression
 	*pipeline.StepInfra
 }
 
@@ -19,8 +26,14 @@ func (eva *Evaluating) GetSource(req *pipeline.Request) error {
 	if model == nil {
 		return fmt.Errorf("lose model")
 	}
-	// TODO
-	//model.Predict()
+
+	eva.model = model
+	source := req.Data.(*base.DenseInstances)
+	predict, err := model.Predict(source)
+	if err != nil {
+		return err
+	}
+	eva.eval.EvaluateStore(predict, source)
 	return nil
 }
 
@@ -32,6 +45,16 @@ func (eva *Evaluating) Serve(req *pipeline.Request, out chan *pipeline.Request) 
 	return nil
 }
 
+func (eva *Evaluating) encodeModelData() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(*eva.model)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
 	for {
 		select {
@@ -39,8 +62,25 @@ func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, o
 			return fmt.Errorf("evaluating process has been canceled")
 		case val := <-in:
 			if val == nil {
-				out <- &pipeline.Request{
+				err := eva.eval.EvaluateCal()
+				if err != nil {
+					return err
+				}
 
+				data, err := eva.encodeModelData()
+				if err != nil {
+					return err
+				}
+
+				out <- &pipeline.Request{
+					Data: &types.CreateModelVersionRequest{
+						Data: data,
+						MAE:  eva.eval.MAE,
+						MSE:  eva.eval.MSE,
+						RMSE: eva.eval.RMSE,
+						R2:   eva.eval.R2,
+					},
+					// TODO
 					KeyVal: nil,
 				}
 				return nil

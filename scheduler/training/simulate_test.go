@@ -1,18 +1,21 @@
 package training
 
 import (
-	"d7y.io/dragonfly/v2/scheduler/training/models"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
 
+	"d7y.io/dragonfly/v2/scheduler/training/models"
+
 	"d7y.io/dragonfly/v2/scheduler/storage"
 )
 
 func TestTraining(t *testing.T) {
-	sto, _ := storage.New(os.TempDir())
+	tmp := os.TempDir()
+	sto, _ := storage.New(tmp)
 	rand.Seed(time.Now().Unix())
 
 	tests := []struct {
@@ -53,8 +56,11 @@ func TestTraining(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.mock(t)
-			file, _ := os.Open("/tmp/record.csv")
+			file, _ := os.Open(fmt.Sprintf("%s/record.csv", tmp))
 			data, _ := New(file)
+			total := sto.Count()
+			data.TotalDataRecordLine = int64(math.Ceil(float64(total) * data.Options.TestPercent))
+			data.TotalTestRecordLine = total - data.TotalDataRecordLine
 			instance, err := data.PreProcess()
 			fmt.Println(instance)
 			if err != nil {

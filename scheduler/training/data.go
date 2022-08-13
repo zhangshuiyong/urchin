@@ -32,7 +32,7 @@ func New(reader io.ReadCloser, option ...DataOptionFunc) (*Data, error) {
 	return t, nil
 }
 
-func (d *Data) Min(maxRecord int, totalRecord int64) int {
+func (d *Data) MinData(maxRecord int, totalRecord int64) int {
 	if int64(maxRecord) > totalRecord {
 		d.TotalDataRecordLine = 0
 		return int(totalRecord)
@@ -41,10 +41,25 @@ func (d *Data) Min(maxRecord int, totalRecord int64) int {
 	return maxRecord
 }
 
+func (d *Data) MinTest(maxRecord int, totalRecord int64) int {
+	if int64(maxRecord) > totalRecord {
+		d.TotalTestRecordLine = 0
+		return int(totalRecord)
+	}
+	d.TotalTestRecordLine -= int64(maxRecord)
+	return maxRecord
+}
+
 // PreProcess load and clean data before training.
-func (d *Data) PreProcess() (*base.DenseInstances, error) {
-	// TODO
-	loopTimes := d.Min(d.Options.MaxRecordLine, d.TotalDataRecordLine)
+func (d *Data) PreProcess(loadType string) (*base.DenseInstances, error) {
+	loopTimes := 0
+	switch loadType {
+	case LoadData:
+		loopTimes = d.MinData(d.Options.MaxRecordLine, d.TotalDataRecordLine)
+	case LoadTest:
+		loopTimes = d.MinTest(d.Options.MaxRecordLine, d.TotalTestRecordLine)
+	}
+
 	instance, err := LoadRecord(d.Reader, loopTimes)
 	if err != nil {
 		return nil, err

@@ -3,6 +3,7 @@ package training
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"d7y.io/dragonfly/v2/scheduler/training/models"
 
@@ -18,8 +19,14 @@ type Training struct {
 	*pipeline.StepInfra
 }
 
+var once sync.Once
+
 func (t *Training) GetSource(req *pipeline.Request) error {
 	source := req.Data.(*base.DenseInstances)
+	once.Do(func() {
+		t.model = models.NewLinearRegression()
+	})
+
 	err := TrainProcess(source, t.to, t.model)
 	if err != nil {
 		return err
@@ -38,19 +45,21 @@ func (t *Training) Serve(req *pipeline.Request, out chan *pipeline.Request) erro
 }
 
 func (t *Training) trainCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
+	var keyVal map[string]interface{}
 	for {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("training process has been canceled")
 		case val := <-in:
 			if val == nil {
+				keyVal[LoadType] = LoadTest
 				out <- &pipeline.Request{
-					Data: t.model,
-					// TODO
-					KeyVal: nil,
+					Data:   t.model,
+					KeyVal: keyVal,
 				}
 				return nil
 			}
+			keyVal = val.KeyVal
 			err := t.Serve(val, out)
 			if err != nil {
 				return err

@@ -63,7 +63,7 @@ func (lr *LinearTraining) Process() interface{} {
 		KeyVal: make(map[string]interface{}),
 		Data:   lr.storage,
 	}
-
+	req.KeyVal[LoadType] = LoadData
 	req, err := p.Exec(req, lr.graph)
 	if err != nil {
 		return nil

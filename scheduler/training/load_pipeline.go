@@ -23,7 +23,7 @@ func (ld *Loading) GetDataSource(req *pipeline.Request) (*pipeline.Request, erro
 	if ld.dataInstance.TotalDataRecordLine == 0 {
 		return nil, nil
 	}
-	result, err := ld.dataInstance.PreProcess()
+	result, err := ld.dataInstance.PreProcess(LoadData)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +94,8 @@ func (ld *Loading) GetTestSource(req *pipeline.Request) (*pipeline.Request, erro
 	if ld.dataInstance.TotalTestRecordLine == 0 {
 		return nil, nil
 	}
-	// TODO
-	result, err := ld.dataInstance.PreProcess()
+
+	result, err := ld.dataInstance.PreProcess(LoadTest)
 	if err != nil {
 		return nil, err
 	}

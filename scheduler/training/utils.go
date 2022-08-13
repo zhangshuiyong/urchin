@@ -123,7 +123,6 @@ func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, erro
 	buf := new(bytes.Buffer)
 
 	for i := 0; i < loopTimes; i++ {
-		//line, _, err := r.ReadLine()
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return nil, err

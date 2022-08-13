@@ -3,7 +3,6 @@ package training
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,29 +19,24 @@ type Saving struct {
 
 // GetSource actually function.
 func (save *Saving) GetSource(req *pipeline.Request) error {
-	source := req.Data.(map[float64]*LinearModel)
-
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	err := enc.Encode(source)
-	if err != nil {
-		return err
+	source := req.Data.(*types.CreateModelVersionRequest)
+	if source == nil {
+		return fmt.Errorf("lose create params")
 	}
-	err = save.managerSave(req, buf.Bytes())
+
+	err := save.managerSave(source)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (save *Saving) managerSave(req *pipeline.Request, model []byte) error {
+func (save *Saving) managerSave(param *types.CreateModelVersionRequest) error {
 	// TODO model_id should get from keyVal, if not get creat it
 	id := "1"
 	modelID := "2"
 	url := fmt.Sprintf("/api/v1/schedulers/%s/models/%s/versions", id, modelID)
-	param := types.CreateModelVersionRequest{
-		Data: model,
-	}
+
 	body, err := json.Marshal(param)
 	if err != nil {
 		return err
