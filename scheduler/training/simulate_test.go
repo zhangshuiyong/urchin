@@ -1,6 +1,8 @@
 package training
 
 import (
+	"d7y.io/dragonfly/v2/scheduler/training/models"
+	"fmt"
 	"math/rand"
 	"os"
 	"testing"
@@ -48,29 +50,35 @@ func TestTraining(t *testing.T) {
 			},
 		},
 	}
-	//for _, tc := range tests {
-	//	t.Run(tc.name, func(t *testing.T) {
-	//		tc.mock(t)
-	//		file, _ := os.Open("/tmp/record.csv")
-	//		data, _ := New(file)
-	//		instance, err := data.PreProcess()
-	//		fmt.Println(instance)
-	//		if err != nil {
-	//			t.Fatal(err)
-	//		}
-	//		model, err := TrainProcess(instance, NewTrainOptions(), nil)
-	//		if err != nil {
-	//			t.Fatal(err)
-	//		}
-	//		predict, err := model.Predict(instance)
-	//		if err != nil {
-	//			t.Fatal(err)
-	//		}
-	//		evaluate, err := Evaluate(predict, instance)
-	//		if err != nil {
-	//			return
-	//		}
-	//		fmt.Println(evaluate)
-	//	})
-	//}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.mock(t)
+			file, _ := os.Open("/tmp/record.csv")
+			data, _ := New(file)
+			instance, err := data.PreProcess()
+			fmt.Println(instance)
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := models.NewLinearRegression()
+			err = TrainProcess(instance, NewTrainOptions(), model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			predict, err := model.Predict(instance)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outArr := make([]float64, 0)
+			labelArr := make([]float64, 0)
+			outArr, labelArr, err = EvaluateStore(predict, instance, outArr, labelArr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Println(outArr)
+			fmt.Println(labelArr)
+			eva, err := EvaluateCal(outArr, labelArr)
+			fmt.Println(eva)
+		})
+	}
 }
