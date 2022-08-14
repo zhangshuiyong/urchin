@@ -23,7 +23,6 @@ func (save *Saving) GetSource(req *pipeline.Request) error {
 	if source == nil {
 		return fmt.Errorf("lose create params")
 	}
-
 	err := save.managerSave(source)
 	if err != nil {
 		return err

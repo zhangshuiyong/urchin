@@ -53,8 +53,8 @@ func (t *Training) trainCall(ctx context.Context, in chan *pipeline.Request, out
 		case val := <-in:
 			if val == nil {
 				keyVal[LoadType] = LoadTest
+				keyVal[OutPutModel] = t.model
 				out <- &pipeline.Request{
-					Data:   t.model,
 					KeyVal: keyVal,
 				}
 				return nil

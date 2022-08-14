@@ -28,7 +28,7 @@ func (ld *Loading) GetDataSource(req *pipeline.Request) (*pipeline.Request, erro
 		return nil, err
 	}
 
-	req.KeyVal[Reader] = ld.dataInstance.Reader
+	req.KeyVal[DataInstance] = ld.dataInstance
 	return &pipeline.Request{
 		Data:   result,
 		KeyVal: req.KeyVal,
@@ -45,8 +45,8 @@ func (ld *Loading) NewData(req *pipeline.Request) error {
 	ld.dataInstance = dataInstance
 
 	total := store.Count()
-	ld.dataInstance.TotalDataRecordLine = int64(math.Ceil(float64(total) * ld.dataInstance.Options.TestPercent))
-	ld.dataInstance.TotalTestRecordLine = total - ld.dataInstance.TotalDataRecordLine
+	ld.dataInstance.TotalTestRecordLine = int64(math.Ceil(float64(total) * ld.dataInstance.Options.TestPercent))
+	ld.dataInstance.TotalDataRecordLine = total - ld.dataInstance.TotalTestRecordLine
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,6 @@ loop:
 				close(out)
 				break loop
 			}
-
 			out <- source
 		}
 	}
@@ -100,7 +99,6 @@ func (ld *Loading) GetTestSource(req *pipeline.Request) (*pipeline.Request, erro
 		return nil, err
 	}
 
-	req.KeyVal[Reader] = ld.dataInstance.Reader
 	return &pipeline.Request{
 		Data:   result,
 		KeyVal: req.KeyVal,
@@ -112,7 +110,7 @@ func (ld *Loading) ProcessTest(req *pipeline.Request, out chan *pipeline.Request
 		// TODO error handle
 		ld.dataInstance.Reader.Close()
 	}()
-
+	ld.dataInstance = req.KeyVal[DataInstance].(*Data)
 	err := ld.Process(req, out, ld.GetTestSource)
 	if err != nil {
 		return err

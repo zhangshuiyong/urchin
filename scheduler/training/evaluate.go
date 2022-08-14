@@ -64,3 +64,10 @@ func (e *Eval) CheckEval() error {
 	}
 	return nil
 }
+
+func NewEval() *Eval {
+	return &Eval{
+		outArr:   make([]float64, 0),
+		labelArr: make([]float64, 0),
+	}
+}

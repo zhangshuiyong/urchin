@@ -59,7 +59,6 @@ func (d *Data) PreProcess(loadType string) (*base.DenseInstances, error) {
 	case LoadTest:
 		loopTimes = d.MinTest(d.Options.MaxRecordLine, d.TotalTestRecordLine)
 	}
-
 	instance, err := LoadRecord(d.Reader, loopTimes)
 	if err != nil {
 		return nil, err

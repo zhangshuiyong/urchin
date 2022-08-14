@@ -131,12 +131,15 @@ func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, erro
 		if err == io.EOF {
 			break
 		}
+		// TODO how to handle
+		if i == 0 {
+			continue
+		}
 		buf.Write([]byte(line))
 	}
 	if buf.Len() == 0 {
 		return nil, errors.New("file empty")
 	}
-
 	strReader := bytes.NewReader(buf.Bytes())
 	instance, err := base.ParseCSVToInstancesFromReader(strReader, false)
 	if err != nil {

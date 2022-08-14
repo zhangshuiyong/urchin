@@ -1,14 +1,10 @@
 package training
 
 import (
-	"fmt"
-	"math"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
-
-	"d7y.io/dragonfly/v2/scheduler/training/models"
 
 	"d7y.io/dragonfly/v2/scheduler/storage"
 )
@@ -27,7 +23,7 @@ func TestTraining(t *testing.T) {
 			name:    "random record preprocess",
 			baseDir: os.TempDir(),
 			mock: func(t *testing.T) {
-				for i := 0; i < 10100; i++ {
+				for i := 0; i < 20000; i++ {
 					record := storage.Record{
 						IP:             rand.Intn(100)%2 + 1,
 						HostName:       rand.Intn(100)%2 + 1,
@@ -56,35 +52,8 @@ func TestTraining(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.mock(t)
-			file, _ := os.Open(fmt.Sprintf("%s/record.csv", tmp))
-			data, _ := New(file)
-			total := sto.Count()
-			data.TotalDataRecordLine = int64(math.Ceil(float64(total) * data.Options.TestPercent))
-			data.TotalTestRecordLine = total - data.TotalDataRecordLine
-			instance, err := data.PreProcess()
-			fmt.Println(instance)
-			if err != nil {
-				t.Fatal(err)
-			}
-			model := models.NewLinearRegression()
-			err = TrainProcess(instance, NewTrainOptions(), model)
-			if err != nil {
-				t.Fatal(err)
-			}
-			predict, err := model.Predict(instance)
-			if err != nil {
-				t.Fatal(err)
-			}
-			outArr := make([]float64, 0)
-			labelArr := make([]float64, 0)
-			outArr, labelArr, err = EvaluateStore(predict, instance, outArr, labelArr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fmt.Println(outArr)
-			fmt.Println(labelArr)
-			eva, err := EvaluateCal(outArr, labelArr)
-			fmt.Println(eva)
+			training := NewLinearTraining(sto)
+			training.Process()
 		})
 	}
 }

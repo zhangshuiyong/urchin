@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"sync"
 
 	"d7y.io/dragonfly/v2/manager/types"
 
@@ -21,12 +22,16 @@ type Evaluating struct {
 	*pipeline.StepInfra
 }
 
+var onceEval sync.Once
+
 func (eva *Evaluating) GetSource(req *pipeline.Request) error {
 	model := req.KeyVal[OutPutModel].(*models.LinearRegression)
 	if model == nil {
 		return fmt.Errorf("lose model")
 	}
-
+	onceEval.Do(func() {
+		eva.eval = NewEval()
+	})
 	eva.model = model
 	source := req.Data.(*base.DenseInstances)
 	predict, err := model.Predict(source)
