@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"d7y.io/dragonfly/v2/scheduler/config"
+
 	"d7y.io/dragonfly/v2/manager/types"
 
 	"d7y.io/dragonfly/v2/pkg/pipeline"
@@ -23,19 +25,22 @@ func (save *Saving) GetSource(req *pipeline.Request) error {
 	if source == nil {
 		return fmt.Errorf("lose create params")
 	}
-	err := save.managerSave(source)
+
+	dynConfigData := req.KeyVal[DynConfigData].(*config.DynconfigData)
+	if dynConfigData == nil {
+		fmt.Errorf("lose keyVal dynConfigData")
+	}
+
+	err := save.managerSave(source, dynConfigData)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (save *Saving) managerSave(param *types.CreateModelVersionRequest) error {
-	// TODO model_id should get from keyVal, if not get creat it
-	id := "1"
-	modelID := "2"
-	url := fmt.Sprintf("/api/v1/schedulers/%s/models/%s/versions", id, modelID)
-
+func (save *Saving) managerSave(param *types.CreateModelVersionRequest, dynConfigData *config.DynconfigData) error {
+	// TODO manager ip
+	url := fmt.Sprintf("%s/api/v1/schedulers/%d/models", dynConfigData.IP, dynConfigData.SchedulerCluster.ID)
 	body, err := json.Marshal(param)
 	if err != nil {
 		return err

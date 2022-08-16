@@ -126,3 +126,9 @@ var (
 	// DefaultCertValidityPeriod is default validity period of certificate.
 	DefaultCertValidityPeriod = 180 * 24 * time.Hour
 )
+
+type MLType string
+
+const (
+	LinearMachineLearning MLType = "linear_machine_learning"
+)

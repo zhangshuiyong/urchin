@@ -47,7 +47,7 @@ func New(algorithm string, pluginDir string) Evaluator {
 		}
 	// TODO Implement MLAlgorithm.
 	case MLAlgorithm, DefaultAlgorithm:
-		return NewEvaluatorBase()
+		return NewMLEvaluator()
 	}
 
 	return NewEvaluatorBase()

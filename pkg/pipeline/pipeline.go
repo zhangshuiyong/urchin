@@ -80,6 +80,7 @@ func (p *Pipeline) handleDag(ctx context.Context, cancel context.CancelFunc, gra
 	}
 }
 
+// TODO
 func (p *Pipeline) handleErrors(err <-chan error) error {
 	return nil
 }

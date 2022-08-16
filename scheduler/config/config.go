@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"d7y.io/dragonfly/v2/scheduler/training"
+
 	"d7y.io/dragonfly/v2/cmd/dependency/base"
 	"d7y.io/dragonfly/v2/pkg/net/fqdn"
 	"d7y.io/dragonfly/v2/pkg/net/ip"
@@ -125,6 +127,8 @@ type TrainingConfig struct {
 
 	// CPU limit while training.
 	CPU int `yaml:"cpu" mapstructure:"cpu"`
+
+	MLType MLType `yaml:"mLType" mapstructure:"mLType"`
 }
 
 type GCConfig struct {
@@ -301,6 +305,7 @@ func New() *Config {
 				EnableAutoRefresh:    false,
 				RefreshModelInterval: DefaultRefreshModelInterval,
 				CPU:                  DefaultCPU,
+				MLType:               LinearMachineLearning,
 			},
 		},
 		DynConfig: &DynConfig{
@@ -408,6 +413,10 @@ func (cfg *Config) Validate() error {
 
 		if cfg.Scheduler.Training.EnableAutoRefresh && cfg.Scheduler.Training.RefreshModelInterval <= 0 {
 			return errors.New("training requires parameter refreshModelInterval")
+		}
+
+		if _, ok := training.MLStore[cfg.Scheduler.Training.MLType]; !ok {
+			return errors.New("training MLType does not exist")
 		}
 	}
 

@@ -25,9 +25,10 @@ const (
 )
 
 const (
-	DataInstance = "data_instance"
-	LoadType     = "load_type"
-	LoadData     = "load_data"
-	LoadTest     = "load_test"
-	OutPutModel  = "output_model"
+	DataInstance  = "data_instance"
+	LoadType      = "load_type"
+	LoadData      = "load_data"
+	LoadTest      = "load_test"
+	OutPutModel   = "output_model"
+	DynConfigData = "dyn_config_data"
 )

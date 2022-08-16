@@ -1,24 +1,35 @@
 package training
 
 import (
+	"time"
+
+	"d7y.io/dragonfly/v2/scheduler/config"
+
+	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/pkg/dag"
 	"d7y.io/dragonfly/v2/pkg/pipeline"
 	"d7y.io/dragonfly/v2/scheduler/storage"
 )
 
 type LinearTraining struct {
-	graph   dag.DAG[pipeline.StepConstruct]
-	storage storage.Storage
+	graph      dag.DAG[pipeline.StepConstruct]
+	storage    storage.Storage
+	done       chan bool
+	interval   time.Duration
+	configData config.DynconfigInterface
 }
 
-func NewLinearTraining(storage storage.Storage) *LinearTraining {
+func NewLinearTraining(storage storage.Storage, interval time.Duration, cfg config.DynconfigInterface) *LinearTraining {
 	g, err := LinearDag()
 	if err != nil {
 		return nil
 	}
 	return &LinearTraining{
-		graph:   g,
-		storage: storage,
+		graph:      g,
+		storage:    storage,
+		done:       make(chan bool),
+		interval:   interval,
+		configData: cfg,
 	}
 }
 
@@ -57,16 +68,43 @@ func LinearDag() (dag.DAG[pipeline.StepConstruct], error) {
 	return graph, nil
 }
 
-func (lr *LinearTraining) Process() interface{} {
+func (lr *LinearTraining) Process() (interface{}, error) {
 	p := pipeline.NewPipeline()
+	dynconfigData, err := lr.configData.Get()
+	if err != nil {
+		return nil, err
+	}
 	req := &pipeline.Request{
 		KeyVal: make(map[string]interface{}),
 		Data:   lr.storage,
 	}
 	req.KeyVal[LoadType] = LoadData
-	req, err := p.Exec(req, lr.graph)
+	req.KeyVal[DynConfigData] = dynconfigData
+	req, err = p.Exec(req, lr.graph)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return req.Data
+	return req.Data, nil
+}
+
+func (lr *LinearTraining) Serve() {
+	go func() {
+		ticker := time.NewTicker(lr.interval)
+		for {
+			select {
+			case <-lr.done:
+				logger.Infof("stop linear training")
+				return
+			case <-ticker.C:
+				_, err := lr.Process()
+				if err != nil {
+					logger.Fatalf("linear regression error: %s", err.Error())
+				}
+			}
+		}
+	}()
+}
+
+func (lr *LinearTraining) Stop() {
+	close(lr.done)
 }
