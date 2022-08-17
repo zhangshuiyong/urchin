@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/johanbrandhorst/certify"
+	"d7y.io/dragonfly/v2/scheduler/training"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	zapadapter "logur.dev/adapter/zap"
@@ -85,6 +86,9 @@ type Server struct {
 
 	// GC server.
 	gc gc.GC
+
+	// MachineLearning
+	train training.MachineLearning
 }
 
 func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, error) {
@@ -182,11 +186,12 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 	s.storage = storage
 
 	// Initialize scheduler.
-	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir(), storage)
+	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir())
 
 	// Initialize scheduler service.
 	service := service.New(cfg, resource, scheduler, dynconfig, s.storage)
 
+<<<<<<< HEAD
 	// Initialize grpc service and server options of scheduler grpc server.
 	schedulerServerOptions := []grpc.ServerOption{}
 	if certifyClient != nil {
@@ -200,6 +205,16 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 		schedulerServerOptions = append(schedulerServerOptions, grpc.Creds(insecure.NewCredentials()))
 	}
 
+
+	if cfg.Scheduler.Training.Enable {
+		refreshInterval := cfg.Scheduler.Training.RefreshModelInterval
+		s.train, err = training.NewML(cfg.Scheduler.Training.MLType, storage, refreshInterval, dynconfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Initialize grpc service.
 	svr := rpcserver.New(service, schedulerServerOptions...)
 	s.grpcServer = svr
 
@@ -236,6 +251,12 @@ func (s *Server) Serve() error {
 	if s.config.Job.Enable {
 		s.job.Serve()
 		logger.Info("job start successfully")
+	}
+
+	// Serve MachineLearning
+	if s.config.Scheduler.Training.Enable {
+		s.train.Serve()
+		logger.Infof("training start successfully")
 	}
 
 	// Started metrics server.
@@ -316,6 +337,10 @@ func (s *Server) Stop() {
 		}
 	}
 
+	if s.config.Scheduler.Training.Enable {
+		s.train.Stop()
+	}
+
 	// Stop manager client.
 	if s.managerClient != nil {
 		if err := s.managerClient.Close(); err != nil {
@@ -324,7 +349,6 @@ func (s *Server) Stop() {
 			logger.Info("manager client closed")
 		}
 	}
-
 	// Stop GRPC server.
 	stopped := make(chan struct{})
 	go func() {
