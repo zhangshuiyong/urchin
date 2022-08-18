@@ -61,6 +61,7 @@ func (eva *Evaluating) encodeModelData() ([]byte, error) {
 }
 
 func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, out chan *pipeline.Request) error {
+	var keyVal map[string]interface{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,7 +77,6 @@ func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, o
 				if err != nil {
 					return err
 				}
-
 				out <- &pipeline.Request{
 					Data: &types.CreateModelVersionRequest{
 						Data: data,
@@ -85,11 +85,10 @@ func (eva *Evaluating) evaCall(ctx context.Context, in chan *pipeline.Request, o
 						RMSE: eva.eval.RMSE,
 						R2:   eva.eval.R2,
 					},
-					// TODO
-					KeyVal: nil,
+					KeyVal: keyVal,
 				}
-				return nil
 			}
+			keyVal = val.KeyVal
 			err := eva.Serve(val, out)
 			if err != nil {
 				return err

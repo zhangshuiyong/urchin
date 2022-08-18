@@ -5,6 +5,8 @@ import (
 
 	"d7y.io/dragonfly/v2/scheduler/config"
 
+	"d7y.io/dragonfly/v2/pkg/rpc/manager/client"
+
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/pkg/dag"
 	"d7y.io/dragonfly/v2/pkg/pipeline"
@@ -12,24 +14,28 @@ import (
 )
 
 type LinearTraining struct {
-	graph      dag.DAG[pipeline.StepConstruct]
-	storage    storage.Storage
-	done       chan bool
-	interval   time.Duration
-	configData config.DynconfigInterface
+	graph         dag.DAG[pipeline.StepConstruct]
+	storage       storage.Storage
+	done          chan bool
+	interval      time.Duration
+	managerClient client.Client
+	cfg           config.DynconfigInterface
+	modelName     string
 }
 
-func NewLinearTraining(storage storage.Storage, interval time.Duration, cfg config.DynconfigInterface) *LinearTraining {
+func NewLinearTraining(storage storage.Storage, cfg config.DynconfigInterface, mc client.Client, tc *config.TrainingConfig) *LinearTraining {
 	g, err := LinearDag()
 	if err != nil {
 		return nil
 	}
 	return &LinearTraining{
-		graph:      g,
-		storage:    storage,
-		done:       make(chan bool),
-		interval:   interval,
-		configData: cfg,
+		graph:         g,
+		storage:       storage,
+		done:          make(chan bool),
+		interval:      tc.RefreshModelInterval,
+		managerClient: mc,
+		cfg:           cfg,
+		modelName:     tc.ModelName,
 	}
 }
 
@@ -70,15 +76,17 @@ func LinearDag() (dag.DAG[pipeline.StepConstruct], error) {
 
 func (lr *LinearTraining) Process() (interface{}, error) {
 	p := pipeline.NewPipeline()
-	dynconfigData, err := lr.configData.Get()
-	if err != nil {
-		return nil, err
-	}
 	req := &pipeline.Request{
 		KeyVal: make(map[string]interface{}),
 		Data:   lr.storage,
 	}
+	dynconfigData, err := lr.cfg.Get()
+	if err != nil {
+		return nil, err
+	}
+	req.KeyVal[ModelName] = lr.modelName
 	req.KeyVal[LoadType] = LoadData
+	req.KeyVal[ManagerClient] = lr.managerClient
 	req.KeyVal[DynConfigData] = dynconfigData
 	req, err = p.Exec(req, lr.graph)
 	if err != nil {

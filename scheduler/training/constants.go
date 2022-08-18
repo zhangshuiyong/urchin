@@ -30,5 +30,7 @@ const (
 	LoadData      = "load_data"
 	LoadTest      = "load_test"
 	OutPutModel   = "output_model"
+	ManagerClient = "manager_client"
 	DynConfigData = "dyn_config_data"
+	ModelName     = "model_name"
 )

@@ -1,13 +1,11 @@
 package evaluator
 
 import (
-	"d7y.io/dragonfly/v2/manager/types"
 	"d7y.io/dragonfly/v2/scheduler/resource"
 )
 
 type MLEvaluator struct {
-	modelVersion types.ModelVersion
-	model        types.Model
+	w *Watcher
 }
 
 // TODO mapreduce
@@ -20,10 +18,13 @@ func (mle *MLEvaluator) IsBadNode(peer *resource.Peer) bool {
 }
 
 func NewMLEvaluator() Evaluator {
-	return &MLEvaluator{}
+	mle := &MLEvaluator{
+		w: NewWatcher(),
+	}
+	mle.w.DetectVersion()
+	return mle
 }
 
 func (mle *MLEvaluator) LoadModel() {
-	// TODO if no model exist, use evaluate_base
-	// 第一次如何找到对应model id
+
 }

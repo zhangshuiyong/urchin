@@ -25,8 +25,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/johanbrandhorst/certify"
 	"d7y.io/dragonfly/v2/scheduler/training"
+	"github.com/johanbrandhorst/certify"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	zapadapter "logur.dev/adapter/zap"
@@ -191,7 +191,6 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 	// Initialize scheduler service.
 	service := service.New(cfg, resource, scheduler, dynconfig, s.storage)
 
-<<<<<<< HEAD
 	// Initialize grpc service and server options of scheduler grpc server.
 	schedulerServerOptions := []grpc.ServerOption{}
 	if certifyClient != nil {
@@ -205,10 +204,8 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 		schedulerServerOptions = append(schedulerServerOptions, grpc.Creds(insecure.NewCredentials()))
 	}
 
-
 	if cfg.Scheduler.Training.Enable {
-		refreshInterval := cfg.Scheduler.Training.RefreshModelInterval
-		s.train, err = training.NewML(cfg.Scheduler.Training.MLType, storage, refreshInterval, dynconfig)
+		s.train, err = training.NewML(storage, dynconfig, managerClient, cfg.Scheduler.Training)
 		if err != nil {
 			return nil, err
 		}

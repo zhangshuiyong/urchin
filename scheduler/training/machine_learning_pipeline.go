@@ -2,7 +2,8 @@ package training
 
 import (
 	"fmt"
-	"time"
+
+	"d7y.io/dragonfly/v2/pkg/rpc/manager/client"
 
 	"d7y.io/dragonfly/v2/scheduler/config"
 
@@ -21,10 +22,10 @@ func init() {
 	MLStore[config.LinearMachineLearning] = struct{}{}
 }
 
-func NewML(mlType config.MLType, storage storage.Storage, refreshInterval time.Duration, cfg config.DynconfigInterface) (MachineLearning, error) {
-	switch mlType {
+func NewML(storage storage.Storage, cfg config.DynconfigInterface, managerClient client.Client, tc *config.TrainingConfig) (MachineLearning, error) {
+	switch tc.MLType {
 	case config.LinearMachineLearning:
-		return NewLinearTraining(storage, refreshInterval, cfg), nil
+		return NewLinearTraining(storage, cfg, managerClient, tc), nil
 	}
-	return nil, fmt.Errorf("unrecognized ml_type, type is %s", mlType)
+	return nil, fmt.Errorf("unrecognized ml_type, type is %s", tc.MLType)
 }
