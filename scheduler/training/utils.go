@@ -147,8 +147,3 @@ func LoadRecord(reader io.ReadCloser, loopTimes int) (*base.DenseInstances, erro
 	}
 	return instance, nil
 }
-
-// TODO modelID
-func GenerateModelID(modelName string) string {
-	return "1"
-}

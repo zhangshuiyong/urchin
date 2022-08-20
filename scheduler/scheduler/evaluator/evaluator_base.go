@@ -175,3 +175,7 @@ func calculateMultiElementAffinityScore(dst, src string) float64 {
 func (eb *evaluatorBase) IsBadNode(peer *resource.Peer) bool {
 	return NormalIsBadNode(peer)
 }
+
+func (eb *evaluatorBase) EvalType() string {
+	return DefaultAlgorithm
+}

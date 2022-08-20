@@ -1,11 +1,16 @@
 package evaluator
 
 import (
+	"d7y.io/dragonfly/v2/manager/types"
+	"d7y.io/dragonfly/v2/scheduler/config"
 	"d7y.io/dragonfly/v2/scheduler/resource"
 )
 
 type MLEvaluator struct {
-	w *Watcher
+	cfg          config.DynconfigInterface
+	needVersion  chan uint64
+	modelVersion chan *types.ModelVersion
+	model        *types.ModelVersion
 }
 
 // TODO mapreduce
@@ -17,14 +22,26 @@ func (mle *MLEvaluator) IsBadNode(peer *resource.Peer) bool {
 	return NormalIsBadNode(peer)
 }
 
-func NewMLEvaluator() Evaluator {
-	mle := &MLEvaluator{
-		w: NewWatcher(),
+func (mle *MLEvaluator) LoadModel() {
+	configData, err := mle.cfg.Get()
+	if err != nil {
+		return
 	}
-	mle.w.DetectVersion()
-	return mle
+	mle.needVersion <- configData.SchedulerCluster.ID
+	model, ok := <-mle.modelVersion
+	if ok {
+		mle.model = model
+	}
 }
 
-func (mle *MLEvaluator) LoadModel() {
+func (mle *MLEvaluator) EvalType() string {
+	return MLAlgorithm
+}
 
+func NewMLEvaluator(dynconfig config.DynconfigInterface, needVersion chan uint64, modelVersion chan *types.ModelVersion) Evaluator {
+	return &MLEvaluator{
+		cfg:          dynconfig,
+		needVersion:  needVersion,
+		modelVersion: modelVersion,
+	}
 }

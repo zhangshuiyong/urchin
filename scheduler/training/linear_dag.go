@@ -20,7 +20,6 @@ type LinearTraining struct {
 	interval      time.Duration
 	managerClient client.Client
 	cfg           config.DynconfigInterface
-	modelName     string
 }
 
 func NewLinearTraining(storage storage.Storage, cfg config.DynconfigInterface, mc client.Client, tc *config.TrainingConfig) *LinearTraining {
@@ -35,7 +34,6 @@ func NewLinearTraining(storage storage.Storage, cfg config.DynconfigInterface, m
 		interval:      tc.RefreshModelInterval,
 		managerClient: mc,
 		cfg:           cfg,
-		modelName:     tc.ModelName,
 	}
 }
 
@@ -84,7 +82,6 @@ func (lr *LinearTraining) Process() (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.KeyVal[ModelName] = lr.modelName
 	req.KeyVal[LoadType] = LoadData
 	req.KeyVal[ManagerClient] = lr.managerClient
 	req.KeyVal[DynConfigData] = dynconfigData

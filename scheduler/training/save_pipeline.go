@@ -33,50 +33,48 @@ func (save *Saving) GetSource(req *pipeline.Request) (*string, error) {
 	if mc == nil {
 		return nil, fmt.Errorf("lose keyVal ManagerClient")
 	}
-
-	mn := req.KeyVal[ModelName].(string)
-	mi := GenerateModelID(mn)
-	_, err := mc.CreateModel(context.Background(), &managerv1.CreateModelRequest{
-		ModelId:     mi,
-		Name:        mn,
+	// TODO: check only need one model in one scheduler
+	models, err := mc.ListModels(context.Background(), &managerv1.ListModelsRequest{
 		SchedulerId: dynconfig.SchedulerCluster.ID,
-		HostName:    dynconfig.Hostname,
-		Ip:          dynconfig.IP,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	modelVersionRequest, err := save.handleReq(request, dynconfig.SchedulerCluster.ID, mi)
-	if err != nil {
-		return nil, err
+	if len(models.Models) == 0 {
+		_, err = mc.CreateModel(context.Background(), &managerv1.CreateModelRequest{
+			ModelId: types.ModelIDEvaluator,
+			// TODO
+			Name:        "TODO",
+			SchedulerId: dynconfig.SchedulerCluster.ID,
+			HostName:    dynconfig.Hostname,
+			Ip:          dynconfig.IP,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	version, err := mc.CreateModelVersion(context.Background(), modelVersionRequest)
+	version, err := mc.CreateModelVersion(context.Background(), &managerv1.CreateModelVersionRequest{
+		SchedulerId: dynconfig.SchedulerCluster.ID,
+		ModelId:     types.ModelIDEvaluator,
+		Data:        request.Data,
+		Mae:         request.MAE,
+		Mse:         request.MSE,
+		Rmse:        request.RMSE,
+		R2:          request.R2,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = mc.UpdateModel(context.Background(), &managerv1.UpdateModelRequest{
-		ModelId:   mi,
 		VersionId: version.VersionId,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &version.VersionId, nil
-}
-
-func (save *Saving) handleReq(src *types.CreateModelVersionRequest, ID uint64, mi string) (*managerv1.CreateModelVersionRequest, error) {
-	return &managerv1.CreateModelVersionRequest{
-		SchedulerId: ID,
-		ModelId:     mi,
-		Data:        src.Data,
-		Mae:         src.MAE,
-		Mse:         src.MSE,
-		Rmse:        src.RMSE,
-		R2:          src.R2,
-	}, nil
 }
 
 // Serve interface.

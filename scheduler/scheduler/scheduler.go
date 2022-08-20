@@ -23,6 +23,8 @@ import (
 	"sort"
 	"time"
 
+	"d7y.io/dragonfly/v2/manager/types"
+
 	commonv1 "d7y.io/api/pkg/apis/common/v1"
 	schedulerv1 "d7y.io/api/pkg/apis/scheduler/v1"
 	"d7y.io/dragonfly/v2/pkg/container/set"
@@ -53,9 +55,9 @@ type scheduler struct {
 	dynconfig config.DynconfigInterface
 }
 
-func New(cfg *config.SchedulerConfig, dynconfig config.DynconfigInterface, pluginDir string) Scheduler {
+func New(cfg *config.SchedulerConfig, dynconfig config.DynconfigInterface, pluginDir string, needVersion chan uint64, modelVersion chan *types.ModelVersion) Scheduler {
 	return &scheduler{
-		evaluator: evaluator.New(cfg.Algorithm, pluginDir),
+		evaluator: evaluator.New(cfg.Algorithm, pluginDir, dynconfig, needVersion, modelVersion),
 		config:    cfg,
 		dynconfig: dynconfig,
 	}
@@ -165,13 +167,8 @@ func (s *scheduler) NotifyAndFindParent(ctx context.Context, peer *resource.Peer
 
 	// Sort candidate parents by evaluation score.
 	taskTotalPieceCount := peer.Task.TotalPieceCount.Load()
-	sort.Slice(
-		candidateParents,
-		func(i, j int) bool {
-			return s.evaluator.Evaluate(candidateParents[i], peer, taskTotalPieceCount) > s.evaluator.Evaluate(candidateParents[j], peer, taskTotalPieceCount)
-		},
-	)
-
+	// TODO
+	sortNodes(candidateParents, s.evaluator, peer, taskTotalPieceCount)
 	// Add edges between candidate parent and peer.
 	var (
 		parents   []*resource.Peer

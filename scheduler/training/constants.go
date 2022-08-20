@@ -32,5 +32,4 @@ const (
 	OutPutModel   = "output_model"
 	ManagerClient = "manager_client"
 	DynConfigData = "dyn_config_data"
-	ModelName     = "model_name"
 )

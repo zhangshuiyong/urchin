@@ -25,6 +25,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"d7y.io/dragonfly/v2/manager/types"
+
+	"d7y.io/dragonfly/v2/scheduler/watcher"
+
 	"d7y.io/dragonfly/v2/scheduler/training"
 	"github.com/johanbrandhorst/certify"
 	"google.golang.org/grpc"
@@ -89,6 +93,9 @@ type Server struct {
 
 	// MachineLearning
 	train training.MachineLearning
+
+	// watcher
+	watcher *watcher.Watcher
 }
 
 func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, error) {
@@ -185,8 +192,11 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 	}
 	s.storage = storage
 
+	needVersion := make(chan uint64, 1)
+	modelVersion := make(chan *types.ModelVersion, 1)
+
 	// Initialize scheduler.
-	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir())
+	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir(), needVersion, modelVersion)
 
 	// Initialize scheduler service.
 	service := service.New(cfg, resource, scheduler, dynconfig, s.storage)
@@ -209,6 +219,9 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 		if err != nil {
 			return nil, err
 		}
+		// Initialize watcher
+		watcher := watcher.NewWatcher(managerClient, needVersion, modelVersion)
+		s.watcher = watcher
 	}
 
 	// Initialize grpc service.
@@ -254,6 +267,8 @@ func (s *Server) Serve() error {
 	if s.config.Scheduler.Training.Enable {
 		s.train.Serve()
 		logger.Infof("training start successfully")
+		s.watcher.Serve()
+		logger.Info("watcher start successfully")
 	}
 
 	// Started metrics server.
