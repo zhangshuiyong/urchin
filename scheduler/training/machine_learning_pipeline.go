@@ -15,13 +15,6 @@ type MachineLearning interface {
 	Stop()
 }
 
-var MLStore map[config.MLType]struct{}
-
-func init() {
-	MLStore = make(map[config.MLType]struct{})
-	MLStore[config.LinearMachineLearning] = struct{}{}
-}
-
 func NewML(storage storage.Storage, cfg config.DynconfigInterface, managerClient client.Client, tc *config.TrainingConfig) (MachineLearning, error) {
 	switch tc.MLType {
 	case config.LinearMachineLearning:

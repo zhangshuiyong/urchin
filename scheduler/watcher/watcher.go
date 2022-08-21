@@ -77,6 +77,10 @@ func WithStandard(standard *types.ModelVersion) WatcherOptionFunc {
 	}
 }
 
+func (w *Watcher) Stop() {
+	close(w.done)
+}
+
 func NewWatcher(mc client.Client, nv chan uint64, mv chan *types.ModelVersion, options ...WatcherOptionFunc) *Watcher {
 	w := &Watcher{
 		needVersion:  nv,

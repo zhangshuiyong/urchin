@@ -2,12 +2,13 @@ package evaluator
 
 import (
 	"bytes"
+	"encoding/gob"
+
 	"d7y.io/dragonfly/v2/manager/types"
 	"d7y.io/dragonfly/v2/scheduler/config"
 	"d7y.io/dragonfly/v2/scheduler/resource"
 	"d7y.io/dragonfly/v2/scheduler/storage"
 	"d7y.io/dragonfly/v2/scheduler/training/models"
-	"encoding/gob"
 	"github.com/gocarina/gocsv"
 	"github.com/sjwhitworth/golearn/base"
 )
@@ -22,15 +23,11 @@ type MLEvaluator struct {
 	model        *types.ModelVersion
 }
 
-// TODO mapreduce
 func (mle *MLEvaluator) Evaluate(parent *resource.Peer, peer *resource.Peer, taskPieceCount int32) float64 {
-	return 0
-}
-
-func EvaluateSingle(parent *resource.Peer, peer *resource.Peer, taskPieceCount int32, peerState int, modelData []byte) (float64, error) {
 	record := storage.Record{
-		Rate:           0,
-		State:          peerState,
+		Rate: 0,
+		// TODO how to get state
+		State:          storage.PeerStateSucceeded,
 		HostType:       int(peer.Host.Type),
 		CreateAt:       peer.CreateAt.Load().Unix() / TimeBucketGap,
 		UpdateAt:       peer.UpdateAt.Load().Unix() / TimeBucketGap,
@@ -47,28 +44,28 @@ func EvaluateSingle(parent *resource.Peer, peer *resource.Peer, taskPieceCount i
 		ParentCreateAt: parent.CreateAt.Load().UnixNano() / TimeBucketGap,
 		ParentUpdateAt: parent.UpdateAt.Load().UnixNano() / TimeBucketGap,
 	}
-	model, err := decodeModelData(modelData)
+	model, err := decodeModelData(mle.model.Data)
 	if err != nil {
-		return -1, err
+		return -1
 	}
 	str, err := gocsv.MarshalString(record)
 	if err != nil {
-		return -1, err
+		return -1
 	}
 	strReader := bytes.NewReader([]byte(str))
 	data, err := base.ParseCSVToInstancesFromReader(strReader, false)
 	if err != nil {
-		return -1, err
+		return -1
 	}
 	out, err := model.Predict(data)
 	if err != nil {
-		return -1, err
+		return -1
 	}
 	attrSpec1, err := out.GetAttribute(out.AllAttributes()[0])
 	if err != nil {
-		return -1, err
+		return -1
 	}
-	return base.UnpackBytesToFloat(out.Get(attrSpec1, 0)), nil
+	return base.UnpackBytesToFloat(out.Get(attrSpec1, 0))
 }
 
 func (mle *MLEvaluator) IsBadNode(peer *resource.Peer) bool {

@@ -351,6 +351,7 @@ func (s *Server) Stop() {
 
 	if s.config.Scheduler.Training.Enable {
 		s.train.Stop()
+		s.watcher.Stop()
 	}
 
 	// Stop manager client.

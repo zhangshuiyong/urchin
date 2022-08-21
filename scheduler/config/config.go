@@ -21,8 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"d7y.io/dragonfly/v2/scheduler/training"
-
 	"d7y.io/dragonfly/v2/cmd/dependency/base"
 	"d7y.io/dragonfly/v2/pkg/net/fqdn"
 	"d7y.io/dragonfly/v2/pkg/net/ip"
@@ -30,6 +28,13 @@ import (
 	"d7y.io/dragonfly/v2/pkg/types"
 	"d7y.io/dragonfly/v2/scheduler/storage"
 )
+
+var MLStore map[MLType]struct{}
+
+func init() {
+	MLStore = make(map[MLType]struct{})
+	MLStore[LinearMachineLearning] = struct{}{}
+}
 
 type Config struct {
 	// Base options.
@@ -415,7 +420,7 @@ func (cfg *Config) Validate() error {
 			return errors.New("training requires parameter refreshModelInterval")
 		}
 
-		if _, ok := training.MLStore[cfg.Scheduler.Training.MLType]; !ok {
+		if _, ok := MLStore[cfg.Scheduler.Training.MLType]; !ok {
 			return errors.New("training MLType does not exist")
 		}
 	}

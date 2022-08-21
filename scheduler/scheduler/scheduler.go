@@ -23,6 +23,8 @@ import (
 	"sort"
 	"time"
 
+	logger "d7y.io/dragonfly/v2/internal/dflog"
+
 	"d7y.io/dragonfly/v2/manager/types"
 
 	commonv1 "d7y.io/api/pkg/apis/common/v1"
@@ -167,8 +169,12 @@ func (s *scheduler) NotifyAndFindParent(ctx context.Context, peer *resource.Peer
 
 	// Sort candidate parents by evaluation score.
 	taskTotalPieceCount := peer.Task.TotalPieceCount.Load()
-	// TODO
-	sortNodes(candidateParents, s.evaluator, peer, taskTotalPieceCount)
+	candidateParents, err := sortNodes(candidateParents, s.evaluator, peer, taskTotalPieceCount)
+	if err != nil {
+		logger.Errorf("sort nodes error, error is %s", err.Error())
+		// Degrade to base evaluator
+		baseCompute(candidateParents, peer, taskTotalPieceCount)
+	}
 	// Add edges between candidate parent and peer.
 	var (
 		parents   []*resource.Peer
