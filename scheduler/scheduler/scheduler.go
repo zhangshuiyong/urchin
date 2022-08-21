@@ -20,7 +20,6 @@ package scheduler
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	logger "d7y.io/dragonfly/v2/internal/dflog"
@@ -222,12 +221,12 @@ func (s *scheduler) FindParent(ctx context.Context, peer *resource.Peer, blockli
 
 	// Sort candidate parents by evaluation score.
 	taskTotalPieceCount := peer.Task.TotalPieceCount.Load()
-	sort.Slice(
-		candidateParents,
-		func(i, j int) bool {
-			return s.evaluator.Evaluate(candidateParents[i], peer, taskTotalPieceCount) > s.evaluator.Evaluate(candidateParents[j], peer, taskTotalPieceCount)
-		},
-	)
+	candidateParents, err := sortNodes(candidateParents, s.evaluator, peer, taskTotalPieceCount)
+	if err != nil {
+		logger.Errorf("sort nodes error, error is %s", err.Error())
+		// Degrade to base evaluator
+		baseCompute(candidateParents, peer, taskTotalPieceCount)
+	}
 
 	peer.Log.Infof("find parent %s successful", candidateParents[0].ID)
 	return candidateParents[0], true
