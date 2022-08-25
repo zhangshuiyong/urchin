@@ -104,9 +104,6 @@ type Record struct {
 	// Location is 0 if peer location equals parent location else 1.
 	Location int `csv:"location"`
 
-	// State int.
-	State int `csv:"State"`
-
 	// ParentHostType int.
 	ParentHostType int `csv:"parentHostType"`
 

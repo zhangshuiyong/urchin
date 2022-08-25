@@ -874,6 +874,10 @@ func (s *Service) handleTaskFail(ctx context.Context, task *resource.Task, backT
 
 // createRecord stores peer download records.
 func (s *Service) createRecord(peer *resource.Peer, peerState int, req *schedulerv1.PeerResult) {
+	if peerState == storage.PeerStateBackToSourceFailed {
+		return
+	}
+
 	parent, err := peer.MainParent()
 	if err != nil {
 		peer.Log.Warn(err)
@@ -896,7 +900,6 @@ func (s *Service) createRecord(peer *resource.Peer, peerState int, req *schedule
 
 	record := storage.Record{
 		Rate:           figureFeatureTrans(float64(peer.Task.ContentLength.Load()), float64(req.Cost)),
-		State:          peerState,
 		HostType:       int(peer.Host.Type),
 		CreateAt:       peer.CreateAt.Load().Unix() / TimeBucketGap,
 		UpdateAt:       peer.UpdateAt.Load().Unix() / TimeBucketGap,
@@ -912,6 +915,10 @@ func (s *Service) createRecord(peer *resource.Peer, peerState int, req *schedule
 		ParentHostType: int(parent.Host.Type),
 		ParentCreateAt: parent.CreateAt.Load().UnixNano() / TimeBucketGap,
 		ParentUpdateAt: parent.UpdateAt.Load().UnixNano() / TimeBucketGap,
+	}
+
+	if peerState == storage.PeerStateFailed {
+		record.Rate = 0
 	}
 
 	if err := s.storage.Create(record); err != nil {

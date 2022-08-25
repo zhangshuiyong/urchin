@@ -25,9 +25,7 @@ type MLEvaluator struct {
 
 func (mle *MLEvaluator) Evaluate(parent *resource.Peer, peer *resource.Peer, taskPieceCount int32) float64 {
 	record := storage.Record{
-		Rate: 0,
-		// TODO how to get state
-		State:          storage.PeerStateSucceeded,
+		Rate:           0,
 		HostType:       int(peer.Host.Type),
 		CreateAt:       peer.CreateAt.Load().Unix() / TimeBucketGap,
 		UpdateAt:       peer.UpdateAt.Load().Unix() / TimeBucketGap,
