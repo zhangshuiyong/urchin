@@ -25,10 +25,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"d7y.io/dragonfly/v2/pkg/types"
+
+	"github.com/johanbrandhorst/certify"
+
 	"d7y.io/dragonfly/v2/scheduler/watcher"
 
 	"d7y.io/dragonfly/v2/scheduler/training"
-	"github.com/johanbrandhorst/certify"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	zapadapter "logur.dev/adapter/zap"
@@ -45,7 +49,6 @@ import (
 	"d7y.io/dragonfly/v2/pkg/net/ip"
 	"d7y.io/dragonfly/v2/pkg/rpc"
 	managerclient "d7y.io/dragonfly/v2/pkg/rpc/manager/client"
-	"d7y.io/dragonfly/v2/pkg/types"
 	"d7y.io/dragonfly/v2/scheduler/config"
 	"d7y.io/dragonfly/v2/scheduler/job"
 	"d7y.io/dragonfly/v2/scheduler/metrics"
