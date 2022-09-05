@@ -25,8 +25,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"d7y.io/dragonfly/v2/manager/types"
-
 	"d7y.io/dragonfly/v2/scheduler/watcher"
 
 	"d7y.io/dragonfly/v2/scheduler/training"
@@ -39,6 +37,7 @@ import (
 
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/internal/dynconfig"
+	models "d7y.io/dragonfly/v2/manager/types"
 	"d7y.io/dragonfly/v2/pkg/cache"
 	"d7y.io/dragonfly/v2/pkg/dfpath"
 	"d7y.io/dragonfly/v2/pkg/gc"
@@ -193,7 +192,7 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 	s.storage = storage
 
 	needVersion := make(chan uint64, 1)
-	modelVersion := make(chan *types.ModelVersion, 1)
+	modelVersion := make(chan *models.ModelVersion, 1)
 
 	// Initialize scheduler.
 	scheduler := scheduler.New(cfg.Scheduler, dynconfig, d.PluginDir(), needVersion, modelVersion)
