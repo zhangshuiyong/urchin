@@ -99,6 +99,7 @@ func (lr *LinearTraining) Serve() {
 			select {
 			case <-lr.done:
 				logger.Infof("stop linear training")
+				ticker.Stop()
 				return
 			case <-ticker.C:
 				_, err := lr.Process()

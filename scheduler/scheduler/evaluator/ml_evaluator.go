@@ -24,6 +24,7 @@ type MLEvaluator struct {
 }
 
 func (mle *MLEvaluator) Evaluate(parent *resource.Peer, peer *resource.Peer, taskPieceCount int32) float64 {
+	mle.LoadModel()
 	record := storage.Record{
 		Rate:           0,
 		HostType:       int(peer.Host.Type),

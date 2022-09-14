@@ -222,7 +222,7 @@ func New(ctx context.Context, cfg *config.Config, d dfpath.Dfpath) (*Server, err
 			return nil, err
 		}
 		// Initialize watcher
-		watcher := watcher.NewWatcher(managerClient, needVersion, modelVersion)
+		watcher := watcher.NewWatcher(managerClient, needVersion, modelVersion, watcher.WithEnableAutoRefresh(cfg.Scheduler.Training.EnableAutoRefresh))
 		s.watcher = watcher
 	}
 
