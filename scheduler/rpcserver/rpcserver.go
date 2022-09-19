@@ -39,7 +39,7 @@ type Server struct {
 
 // New returns a new transparent scheduler server from the given options.
 func New(service *service.Service, opts ...grpc.ServerOption) *grpc.Server {
-	return server.New(&Server{service: service}, opts...)
+	return server.NewV1(&Server{service: service}, opts...)
 }
 
 // RegisterPeerTask registers peer and triggers seed peer download task.

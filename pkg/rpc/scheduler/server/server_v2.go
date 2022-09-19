@@ -17,8 +17,6 @@
 package server
 
 import (
-	"time"
-
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_ratelimit "github.com/grpc-ecosystem/go-grpc-middleware/ratelimit"
@@ -31,38 +29,20 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 
-	schedulerv1 "d7y.io/api/pkg/apis/scheduler/v1"
-
+	schedulerv2 "d7y.io/api/pkg/apis/scheduler/v2"
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/pkg/rpc"
 )
 
-const (
-	// DefaultQPS is default qps of grpc server.
-	DefaultQPS = 10 * 1000
-
-	// DefaultBurst is default burst of grpc server.
-	DefaultBurst = 20 * 1000
-
-	// DefaultMaxConnectionIdle is default max connection idle of grpc keepalive.
-	DefaultMaxConnectionIdle = 10 * time.Minute
-
-	// DefaultMaxConnectionAge is default max connection age of grpc keepalive.
-	DefaultMaxConnectionAge = 12 * time.Hour
-
-	// DefaultMaxConnectionAgeGrace is default max connection age grace of grpc keepalive.
-	DefaultMaxConnectionAgeGrace = 5 * time.Minute
-)
-
-// New returns a grpc server instance and register service on grpc server.
-func New(svr schedulerv1.SchedulerServer, opts ...grpc.ServerOption) *grpc.Server {
-	limiter := rpc.NewRateLimiterInterceptor(DefaultQPS, DefaultBurst)
+// NewV2 returns the v2 grpc server instance and register service on grpc server.
+func NewV2(svr schedulerv2.SchedulerServer, opts ...grpc.ServerOption) *grpc.Server {
+	limiter := rpc.NewRateLimiterInterceptor(defaultQPS, defaultBurst)
 
 	grpcServer := grpc.NewServer(append([]grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle:     DefaultMaxConnectionIdle,
-			MaxConnectionAge:      DefaultMaxConnectionAge,
-			MaxConnectionAgeGrace: DefaultMaxConnectionAgeGrace,
+			MaxConnectionIdle:     defaultMaxConnectionIdle,
+			MaxConnectionAge:      defaultMaxConnectionAge,
+			MaxConnectionAgeGrace: defaultMaxConnectionAgeGrace,
 		}),
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 			grpc_ratelimit.UnaryServerInterceptor(limiter),
@@ -85,7 +65,7 @@ func New(svr schedulerv1.SchedulerServer, opts ...grpc.ServerOption) *grpc.Serve
 	}, opts...)...)
 
 	// Register servers on grpc server.
-	schedulerv1.RegisterSchedulerServer(grpcServer, svr)
+	schedulerv2.RegisterSchedulerServer(grpcServer, svr)
 
 	// Register health on grpc server.
 	healthpb.RegisterHealthServer(grpcServer, health.NewServer())
