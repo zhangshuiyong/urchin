@@ -9,6 +9,8 @@ import (
 	reflect "reflect"
 
 	v1 "d7y.io/api/pkg/apis/scheduler/v1"
+	v2 "d7y.io/api/pkg/apis/scheduler/v2"
+	client "d7y.io/dragonfly/v2/pkg/rpc/scheduler/client"
 	gomock "github.com/golang/mock/gomock"
 	grpc "google.golang.org/grpc"
 )
@@ -36,25 +38,6 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
 }
 
-// AnnounceTask mocks base method.
-func (m *MockClient) AnnounceTask(arg0 context.Context, arg1 *v1.AnnounceTaskRequest, arg2 ...grpc.CallOption) error {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1}
-	for _, a := range arg2 {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "AnnounceTask", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AnnounceTask indicates an expected call of AnnounceTask.
-func (mr *MockClientMockRecorder) AnnounceTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AnnounceTask", reflect.TypeOf((*MockClient)(nil).AnnounceTask), varargs...)
-}
-
 // Close mocks base method.
 func (m *MockClient) Close() error {
 	m.ctrl.T.Helper()
@@ -69,8 +52,78 @@ func (mr *MockClientMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockClient)(nil).Close))
 }
 
+// V1 mocks base method.
+func (m *MockClient) V1() client.V1 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "V1")
+	ret0, _ := ret[0].(client.V1)
+	return ret0
+}
+
+// V1 indicates an expected call of V1.
+func (mr *MockClientMockRecorder) V1() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "V1", reflect.TypeOf((*MockClient)(nil).V1))
+}
+
+// V2 mocks base method.
+func (m *MockClient) V2() client.V2 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "V2")
+	ret0, _ := ret[0].(client.V2)
+	return ret0
+}
+
+// V2 indicates an expected call of V2.
+func (mr *MockClientMockRecorder) V2() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "V2", reflect.TypeOf((*MockClient)(nil).V2))
+}
+
+// MockV1 is a mock of V1 interface.
+type MockV1 struct {
+	ctrl     *gomock.Controller
+	recorder *MockV1MockRecorder
+}
+
+// MockV1MockRecorder is the mock recorder for MockV1.
+type MockV1MockRecorder struct {
+	mock *MockV1
+}
+
+// NewMockV1 creates a new mock instance.
+func NewMockV1(ctrl *gomock.Controller) *MockV1 {
+	mock := &MockV1{ctrl: ctrl}
+	mock.recorder = &MockV1MockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockV1) EXPECT() *MockV1MockRecorder {
+	return m.recorder
+}
+
+// AnnounceTask mocks base method.
+func (m *MockV1) AnnounceTask(arg0 context.Context, arg1 *v1.AnnounceTaskRequest, arg2 ...grpc.CallOption) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AnnounceTask", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AnnounceTask indicates an expected call of AnnounceTask.
+func (mr *MockV1MockRecorder) AnnounceTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AnnounceTask", reflect.TypeOf((*MockV1)(nil).AnnounceTask), varargs...)
+}
+
 // LeaveTask mocks base method.
-func (m *MockClient) LeaveTask(arg0 context.Context, arg1 *v1.PeerTarget, arg2 ...grpc.CallOption) error {
+func (m *MockV1) LeaveTask(arg0 context.Context, arg1 *v1.PeerTarget, arg2 ...grpc.CallOption) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
@@ -82,14 +135,14 @@ func (m *MockClient) LeaveTask(arg0 context.Context, arg1 *v1.PeerTarget, arg2 .
 }
 
 // LeaveTask indicates an expected call of LeaveTask.
-func (mr *MockClientMockRecorder) LeaveTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+func (mr *MockV1MockRecorder) LeaveTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaveTask", reflect.TypeOf((*MockClient)(nil).LeaveTask), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaveTask", reflect.TypeOf((*MockV1)(nil).LeaveTask), varargs...)
 }
 
 // RegisterPeerTask mocks base method.
-func (m *MockClient) RegisterPeerTask(arg0 context.Context, arg1 *v1.PeerTaskRequest, arg2 ...grpc.CallOption) (*v1.RegisterResult, error) {
+func (m *MockV1) RegisterPeerTask(arg0 context.Context, arg1 *v1.PeerTaskRequest, arg2 ...grpc.CallOption) (*v1.RegisterResult, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
@@ -102,14 +155,14 @@ func (m *MockClient) RegisterPeerTask(arg0 context.Context, arg1 *v1.PeerTaskReq
 }
 
 // RegisterPeerTask indicates an expected call of RegisterPeerTask.
-func (mr *MockClientMockRecorder) RegisterPeerTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+func (mr *MockV1MockRecorder) RegisterPeerTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterPeerTask", reflect.TypeOf((*MockClient)(nil).RegisterPeerTask), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterPeerTask", reflect.TypeOf((*MockV1)(nil).RegisterPeerTask), varargs...)
 }
 
 // ReportPeerResult mocks base method.
-func (m *MockClient) ReportPeerResult(arg0 context.Context, arg1 *v1.PeerResult, arg2 ...grpc.CallOption) error {
+func (m *MockV1) ReportPeerResult(arg0 context.Context, arg1 *v1.PeerResult, arg2 ...grpc.CallOption) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
@@ -121,14 +174,14 @@ func (m *MockClient) ReportPeerResult(arg0 context.Context, arg1 *v1.PeerResult,
 }
 
 // ReportPeerResult indicates an expected call of ReportPeerResult.
-func (mr *MockClientMockRecorder) ReportPeerResult(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+func (mr *MockV1MockRecorder) ReportPeerResult(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportPeerResult", reflect.TypeOf((*MockClient)(nil).ReportPeerResult), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportPeerResult", reflect.TypeOf((*MockV1)(nil).ReportPeerResult), varargs...)
 }
 
 // ReportPieceResult mocks base method.
-func (m *MockClient) ReportPieceResult(arg0 context.Context, arg1 *v1.PeerTaskRequest, arg2 ...grpc.CallOption) (v1.Scheduler_ReportPieceResultClient, error) {
+func (m *MockV1) ReportPieceResult(arg0 context.Context, arg1 *v1.PeerTaskRequest, arg2 ...grpc.CallOption) (v1.Scheduler_ReportPieceResultClient, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
@@ -141,14 +194,14 @@ func (m *MockClient) ReportPieceResult(arg0 context.Context, arg1 *v1.PeerTaskRe
 }
 
 // ReportPieceResult indicates an expected call of ReportPieceResult.
-func (mr *MockClientMockRecorder) ReportPieceResult(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+func (mr *MockV1MockRecorder) ReportPieceResult(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportPieceResult", reflect.TypeOf((*MockClient)(nil).ReportPieceResult), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportPieceResult", reflect.TypeOf((*MockV1)(nil).ReportPieceResult), varargs...)
 }
 
 // StatTask mocks base method.
-func (m *MockClient) StatTask(arg0 context.Context, arg1 *v1.StatTaskRequest, arg2 ...grpc.CallOption) (*v1.Task, error) {
+func (m *MockV1) StatTask(arg0 context.Context, arg1 *v1.StatTaskRequest, arg2 ...grpc.CallOption) (*v1.Task, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
@@ -161,8 +214,149 @@ func (m *MockClient) StatTask(arg0 context.Context, arg1 *v1.StatTaskRequest, ar
 }
 
 // StatTask indicates an expected call of StatTask.
-func (mr *MockClientMockRecorder) StatTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+func (mr *MockV1MockRecorder) StatTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatTask", reflect.TypeOf((*MockClient)(nil).StatTask), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatTask", reflect.TypeOf((*MockV1)(nil).StatTask), varargs...)
+}
+
+// MockV2 is a mock of V2 interface.
+type MockV2 struct {
+	ctrl     *gomock.Controller
+	recorder *MockV2MockRecorder
+}
+
+// MockV2MockRecorder is the mock recorder for MockV2.
+type MockV2MockRecorder struct {
+	mock *MockV2
+}
+
+// NewMockV2 creates a new mock instance.
+func NewMockV2(ctrl *gomock.Controller) *MockV2 {
+	mock := &MockV2{ctrl: ctrl}
+	mock.recorder = &MockV2MockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockV2) EXPECT() *MockV2MockRecorder {
+	return m.recorder
+}
+
+// AnnouncePeer mocks base method.
+func (m *MockV2) AnnouncePeer(arg0 context.Context, arg1 *v2.RegisterRequest, arg2 ...grpc.CallOption) (v2.Scheduler_AnnouncePeerClient, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AnnouncePeer", varargs...)
+	ret0, _ := ret[0].(v2.Scheduler_AnnouncePeerClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AnnouncePeer indicates an expected call of AnnouncePeer.
+func (mr *MockV2MockRecorder) AnnouncePeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AnnouncePeer", reflect.TypeOf((*MockV2)(nil).AnnouncePeer), varargs...)
+}
+
+// ExchangePeer mocks base method.
+func (m *MockV2) ExchangePeer(arg0 context.Context, arg1 *v2.ExchangePeerRequest, arg2 ...grpc.CallOption) (*v2.ExchangePeerResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ExchangePeer", varargs...)
+	ret0, _ := ret[0].(*v2.ExchangePeerResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ExchangePeer indicates an expected call of ExchangePeer.
+func (mr *MockV2MockRecorder) ExchangePeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangePeer", reflect.TypeOf((*MockV2)(nil).ExchangePeer), varargs...)
+}
+
+// LeavePeer mocks base method.
+func (m *MockV2) LeavePeer(arg0 context.Context, arg1 *v2.LeavePeerRequest, arg2 ...grpc.CallOption) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "LeavePeer", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LeavePeer indicates an expected call of LeavePeer.
+func (mr *MockV2MockRecorder) LeavePeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeavePeer", reflect.TypeOf((*MockV2)(nil).LeavePeer), varargs...)
+}
+
+// LeaveTask mocks base method.
+func (m *MockV2) LeaveTask(arg0 context.Context, arg1 *v2.LeaveTaskRequest, arg2 ...grpc.CallOption) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "LeaveTask", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LeaveTask indicates an expected call of LeaveTask.
+func (mr *MockV2MockRecorder) LeaveTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaveTask", reflect.TypeOf((*MockV2)(nil).LeaveTask), varargs...)
+}
+
+// StatPeer mocks base method.
+func (m *MockV2) StatPeer(arg0 context.Context, arg1 *v2.StatPeerRequest, arg2 ...grpc.CallOption) (*v2.Peer, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "StatPeer", varargs...)
+	ret0, _ := ret[0].(*v2.Peer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StatPeer indicates an expected call of StatPeer.
+func (mr *MockV2MockRecorder) StatPeer(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatPeer", reflect.TypeOf((*MockV2)(nil).StatPeer), varargs...)
+}
+
+// StatTask mocks base method.
+func (m *MockV2) StatTask(arg0 context.Context, arg1 *v2.StatTaskRequest, arg2 ...grpc.CallOption) (*v2.Task, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "StatTask", varargs...)
+	ret0, _ := ret[0].(*v2.Task)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StatTask indicates an expected call of StatTask.
+func (mr *MockV2MockRecorder) StatTask(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatTask", reflect.TypeOf((*MockV2)(nil).StatTask), varargs...)
 }
