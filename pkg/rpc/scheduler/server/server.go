@@ -17,6 +17,8 @@
 package server
 
 import (
+	"time"
+
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_ratelimit "github.com/grpc-ecosystem/go-grpc-middleware/ratelimit"
@@ -29,13 +31,32 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 
+	schedulerv1 "d7y.io/api/pkg/apis/scheduler/v1"
 	schedulerv2 "d7y.io/api/pkg/apis/scheduler/v2"
+
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/pkg/rpc"
 )
 
-// NewV2 returns the v2 grpc server instance and register service on grpc server.
-func NewV2(svr schedulerv2.SchedulerServer, opts ...grpc.ServerOption) *grpc.Server {
+const (
+	// defaultQPS is default qps of grpc server.
+	defaultQPS = 10 * 1000
+
+	// defaultBurst is default burst of grpc server.
+	defaultBurst = 20 * 1000
+
+	// defaultMaxConnectionIdle is default max connection idle of grpc keepalive.
+	defaultMaxConnectionIdle = 10 * time.Minute
+
+	// defaultMaxConnectionAge is default max connection age of grpc keepalive.
+	defaultMaxConnectionAge = 12 * time.Hour
+
+	// defaultMaxConnectionAgeGrace is default max connection age grace of grpc keepalive.
+	defaultMaxConnectionAgeGrace = 5 * time.Minute
+)
+
+// New returns the grpc server instance and register service on grpc server.
+func New(v1 schedulerv1.SchedulerServer, v2 schedulerv2.SchedulerServer, opts ...grpc.ServerOption) *grpc.Server {
 	limiter := rpc.NewRateLimiterInterceptor(defaultQPS, defaultBurst)
 
 	grpcServer := grpc.NewServer(append([]grpc.ServerOption{
@@ -64,8 +85,11 @@ func NewV2(svr schedulerv2.SchedulerServer, opts ...grpc.ServerOption) *grpc.Ser
 		)),
 	}, opts...)...)
 
-	// Register servers on grpc server.
-	schedulerv2.RegisterSchedulerServer(grpcServer, svr)
+	// Register servers on v1 grpc server.
+	schedulerv1.RegisterSchedulerServer(grpcServer, v1)
+
+	// Register servers on v2 grpc server.
+	schedulerv2.RegisterSchedulerServer(grpcServer, v2)
 
 	// Register health on grpc server.
 	healthpb.RegisterHealthServer(grpcServer, health.NewServer())
