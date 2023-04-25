@@ -333,7 +333,7 @@ func New(opt *config.DaemonOption, d dfpath.Dfpath) (Daemon, error) {
 
 	var objectStorage objectstorage.ObjectStorage
 	if opt.ObjectStorage.Enable {
-		objectStorage, err = objectstorage.New(opt, dynconfig, peerTaskManager, storageManager, d.LogDir())
+		objectStorage, err = objectstorage.New(opt, dynconfig, host, peerTaskManager, storageManager, d.LogDir())
 		if err != nil {
 			return nil, err
 		}
@@ -560,11 +560,12 @@ func (cd *clientDaemon) Serve() error {
 
 	// prepare object storage service listen
 	var objectStorageListener net.Listener
+	var objectStoragePort int
 	if cd.Option.ObjectStorage.Enable {
 		if cd.Option.ObjectStorage.TCPListen == nil {
 			return errors.New("object storage tcp listen option is empty")
 		}
-		objectStorageListener, _, err = cd.prepareTCPListener(cd.Option.ObjectStorage.ListenOption, true)
+		objectStorageListener, objectStoragePort, err = cd.prepareTCPListener(cd.Option.ObjectStorage.ListenOption, true)
 		if err != nil {
 			logger.Errorf("failed to listen for object storage service: %v", err)
 			return err
@@ -660,7 +661,7 @@ func (cd *clientDaemon) Serve() error {
 		g.Go(func() error {
 			defer objectStorageListener.Close()
 			logger.Infof("serve object storage service at %s://%s", objectStorageListener.Addr().Network(), objectStorageListener.Addr().String())
-			if err := cd.ObjectStorage.Serve(objectStorageListener); err != nil && err != http.ErrServerClosed {
+			if err := cd.ObjectStorage.Serve(objectStorageListener, objectStoragePort); err != nil && err != http.ErrServerClosed {
 				logger.Errorf("failed to serve for object storage service: %v", err)
 				return err
 			} else if err == http.ErrServerClosed {
