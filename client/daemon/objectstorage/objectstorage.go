@@ -21,6 +21,11 @@ package objectstorage
 import (
 	"bytes"
 	"context"
+	"d7y.io/api/pkg/apis/scheduler/v1"
+	urchindataset "d7y.io/dragonfly/v2/client/daemon/urchin_dataset"
+	urchindatasetv "d7y.io/dragonfly/v2/client/daemon/urchin_dataset_vesion"
+	urchinpeers "d7y.io/dragonfly/v2/client/daemon/urchin_peers"
+	urchintask "d7y.io/dragonfly/v2/client/daemon/urchin_task"
 	"fmt"
 	"io"
 	"math"
@@ -84,7 +89,7 @@ const (
 // ObjectStorage is the interface used for object storage server.
 type ObjectStorage interface {
 	// Started object storage server.
-	Serve(lis net.Listener) error
+	Serve(lis net.Listener, port int) error
 
 	// Stop object storage server.
 	Stop() error
@@ -98,18 +103,19 @@ type objectStorage struct {
 	peerTaskManager peer.TaskManager
 	storageManager  storage.Manager
 	peerIDGenerator peer.IDGenerator
+	urchinPeer      *urchinpeers.UrchinPeer
 }
 
 // New returns a new ObjectStorage instence.
-func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerTaskManager peer.TaskManager, storageManager storage.Manager, logDir string) (ObjectStorage, error) {
+func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *scheduler.PeerHost, peerTaskManager peer.TaskManager, storageManager storage.Manager, logDir string) (ObjectStorage, error) {
 	o := &objectStorage{
 		config:          cfg,
 		dynconfig:       dynconfig,
 		peerTaskManager: peerTaskManager,
 		storageManager:  storageManager,
 		peerIDGenerator: peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
+		urchinPeer:      urchinpeers.NewPeer(peerHost, &cfg.Storage),
 	}
-
 	router := o.initRouter(cfg, logDir)
 	o.Server = &http.Server{
 		Handler: router,
@@ -119,7 +125,8 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerTaskManager p
 }
 
 // Started object storage server.
-func (o *objectStorage) Serve(lis net.Listener) error {
+func (o *objectStorage) Serve(lis net.Listener, port int) error {
+	o.urchinPeer.PeerPort = port
 	return o.Server.Serve(lis)
 }
 
@@ -176,6 +183,24 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 	b.GET(":id/objects/*object_key", o.getObject)
 	b.DELETE(":id/objects/*object_key", o.destroyObject)
 	b.PUT(":id/objects/*object_key", o.putObject)
+
+	api := r.Group("/api/v1")
+	api.GET("/peers", urchinpeers.GetUrchinPeers)
+	api.GET("/peer/:peer_id", o.urchinPeer.GetPeer)
+
+	api.POST("/dataset", urchindataset.CreateDataSet)
+	api.PATCH("/dataset/:dataset_id", urchindataset.UpdateDataSet)
+	api.DELETE("/dataset/:dataset_id", urchindataset.DeleteDataSet)
+	api.GET("/dataset/:dataset_id", urchindataset.GetDataSet)
+	api.GET("/datasets", urchindataset.ListDataSets)
+
+	api.POST("/dataset/:dataset_id/version", urchindatasetv.CreateDataSetVersion)
+	api.PATCH("/dataset/:dataset_id/version/:version_id", urchindatasetv.UpdateDataSetVersion)
+	api.DELETE("/dataset/:dataset_id/version/:version_id", urchindatasetv.DeleteDataSetVersion)
+	api.GET("/dataset/:dataset_id/version/:version_id", urchindatasetv.GetDataSetVersion)
+	api.GET("/dataset/:dataset_id/versions", urchindatasetv.ListDataSetVersions)
+
+	api.GET("/dataset/task/:task_id", urchintask.GetTask)
 
 	return r
 }
