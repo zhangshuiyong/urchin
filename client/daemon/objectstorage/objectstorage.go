@@ -24,6 +24,7 @@ import (
 	"d7y.io/api/pkg/apis/scheduler/v1"
 	urchindataset "d7y.io/dragonfly/v2/client/daemon/urchin_dataset"
 	urchindatasetv "d7y.io/dragonfly/v2/client/daemon/urchin_dataset_vesion"
+	urchinfile "d7y.io/dragonfly/v2/client/daemon/urchin_file"
 	urchinpeers "d7y.io/dragonfly/v2/client/daemon/urchin_peers"
 	urchintask "d7y.io/dragonfly/v2/client/daemon/urchin_task"
 	"fmt"
@@ -98,24 +99,29 @@ type ObjectStorage interface {
 // objectStorage provides object storage function.
 type objectStorage struct {
 	*http.Server
-	config          *config.DaemonOption
-	dynconfig       config.Dynconfig
-	peerTaskManager peer.TaskManager
-	storageManager  storage.Manager
-	peerIDGenerator peer.IDGenerator
-	urchinPeer      *urchinpeers.UrchinPeer
+	config            *config.DaemonOption
+	dynconfig         config.Dynconfig
+	peerTaskManager   peer.TaskManager
+	storageManager    storage.Manager
+	peerIDGenerator   peer.IDGenerator
+	urchinPeer        *urchinpeers.UrchinPeer
+	urchinTaskManager *urchintask.UrchinTaskManager
+	urchinFileManager *urchinfile.UrchinFileManager
 }
 
 // New returns a new ObjectStorage instence.
 func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *scheduler.PeerHost, peerTaskManager peer.TaskManager, storageManager storage.Manager, logDir string) (ObjectStorage, error) {
 	o := &objectStorage{
-		config:          cfg,
-		dynconfig:       dynconfig,
-		peerTaskManager: peerTaskManager,
-		storageManager:  storageManager,
-		peerIDGenerator: peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
-		urchinPeer:      urchinpeers.NewPeer(peerHost),
+		config:            cfg,
+		dynconfig:         dynconfig,
+		peerTaskManager:   peerTaskManager,
+		storageManager:    storageManager,
+		peerIDGenerator:   peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
+		urchinPeer:        urchinpeers.NewPeer(peerHost),
+		urchinTaskManager: urchintask.NewUrchinTaskManager(peerTaskManager),
+		urchinFileManager: nil,
 	}
+	o.urchinFileManager = urchinfile.NewUrchinFileManager(o.config, o.dynconfig, o.peerTaskManager, o.storageManager, o.peerIDGenerator)
 	router := o.initRouter(cfg, logDir)
 	o.Server = &http.Server{
 		Handler: router,
@@ -200,7 +206,8 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 	api.GET("/dataset/:dataset_id/version/:version_id", urchindatasetv.GetDataSetVersion)
 	api.GET("/dataset/:dataset_id/versions", urchindatasetv.ListDataSetVersions)
 
-	api.GET("/dataset/task/:task_id", urchintask.GetTask)
+	api.GET("/task/:task_id", o.urchinTaskManager.GetTask)
+	api.PUT("/file/upload", o.urchinFileManager.UploadFile)
 
 	return r
 }
