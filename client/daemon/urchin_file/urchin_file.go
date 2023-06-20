@@ -281,8 +281,8 @@ func (urfm *UrchinFileManager) UploadFile(ctx *gin.Context) {
 		log := logger.WithTaskAndPeerID(taskID, peerID)
 		log.Infof("upload object %s meta: %s", backendBlobFileObjectKey, taskID)
 
-		// Import object to local storage.
-		log.Infof("import object %s to local storage", backendBlobFileObjectKey)
+		// Import file to local storage.
+		log.Infof("import file %s to local storage", backendBlobFileObjectKey)
 		if err := urfm.importFileToLocalStorage(ctx, taskID, peerID, mergedDataBlobFilePath); err != nil {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
@@ -300,27 +300,55 @@ func (urfm *UrchinFileManager) UploadFile(ctx *gin.Context) {
 			return
 		}
 
-		// Import object to seed peer.
+		importFileToSeedPeersSucceed := make(chan bool)
+		importFileToBackendSucceed := make(chan bool)
+
+		// Import local file to seed peer.
 		go func() {
 			if err := urfm.importFileToSeedPeers(context.Background(), bucketName, backendBlobFileObjectKey, urlMeta.Filter, Ephemeral, mergedDataBlobFilePath, maxReplicas, log); err != nil {
-				log.Errorf("import object %s to seed peers failed: %s", backendBlobFileObjectKey, err)
+				log.Errorf("import local blob file %s to seed peers failed: %s", backendBlobFileObjectKey, err)
+				importFileToSeedPeersSucceed <- false
+				return
 			}
+
+			importFileToSeedPeersSucceed <- true
 		}()
 
 		// Import local file to backend object storage.
 		go func() {
-			log.Infof("import object %s to bucket %s", backendBlobFileObjectKey, bucketName)
+			log.Infof("import local blob file %s to bucket %s", backendBlobFileObjectKey, bucketName)
 			if err := urfm.importFileToBackend(context.Background(), bucketName, backendBlobFileObjectKey, dgst, mergedDataBlobFilePath, client); err != nil {
-				log.Errorf("import object %s to bucket %s failed: %s", backendBlobFileObjectKey, bucketName, err.Error())
+				log.Errorf("import local blob file %s to bucket %s failed: %s", backendBlobFileObjectKey, bucketName, err.Error())
+				importFileToBackendSucceed <- false
+				return
+			}
+			//ToDo: dataset replicas async task
+
+			importFileToBackendSucceed <- true
+		}()
+
+		//Delete local blob file after importFileToSeedPeers and importFileToBackend
+		go func() {
+			//wait importFileToSeedPeers goroutine finish
+			isSeedPeersOk := <-importFileToSeedPeersSucceed
+			if !isSeedPeersOk {
+				log.Errorf("import local blob file %s to seed peers failed, stop delete this dataset local files", mergedDataBlobFilePath)
 				return
 			}
 
-			//ToDo: dataset replicas async task
+			//wait importFileToBackend goroutine finish
+			isBackendOk := <-importFileToBackendSucceed
+			if !isBackendOk {
+				log.Errorf("import local blob file %s to bucket %s failed, stop delete this dataset local files", mergedDataBlobFilePath, bucketName)
+				return
+			}
 
-			//if err := urfm.deleteLocalChunks(datasetId, datasetVersionId, dgst); err != nil {
-			//	log.Errorf("deleteLocalChunks failed: %s, datasetId:%s, datasetVersionId:%s", err.Error(), datasetId, datasetVersionId)
-			//	return
-			//}
+			log.Info("import blob file To seed peers & backend succeed! Go to delete this dataset local files to save disk space")
+
+			if err := urfm.deleteLocalChunks(datasetId, datasetVersionId, dgst); err != nil {
+				log.Errorf("deleteLocalChunks failed: %s, datasetId:%s, datasetVersionId:%s", err.Error(), datasetId, datasetVersionId)
+				return
+			}
 
 			if err := urfm.deleteLocalBlobFile(datasetId, datasetVersionId, dgst); err != nil {
 				log.Errorf("deleteLocalBlobFile failed: %s, datasetId:%s, datasetVersionId:%s", err.Error(), datasetId, datasetVersionId)
