@@ -208,6 +208,7 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 
 	api.GET("/task/:task_id", o.urchinTaskManager.GetTask)
 	api.PUT("/file/upload", o.urchinFileManager.UploadFile)
+	api.GET("/file/stat", o.urchinFileManager.StatFile)
 
 	return r
 }
@@ -220,7 +221,7 @@ func (o *objectStorage) getHealth(ctx *gin.Context) {
 // headObject uses to head object.
 func (o *objectStorage) headObject(ctx *gin.Context) {
 	var params ObjectParams
-	if err := ctx.ShouldBindUri(&params); err != nil {
+	if err := ctx.ShouldBindQuery(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
