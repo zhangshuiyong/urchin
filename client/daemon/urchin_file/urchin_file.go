@@ -95,6 +95,17 @@ func NewUrchinFileManager(config *config.DaemonOption, dynconfig config.Dynconfi
 	}
 }
 
+func (urfm *UrchinFileManager) genMetaFileName(versionId string, versionDigest string) string {
+	return fmt.Sprintf("%s_%s_%s", "meta", versionDigest, versionId)
+}
+
+func (urfm *UrchinFileManager) genBackendMetaFileObjectKey(datasetId string, versionId string, versionDigest string) string {
+
+	datasetMetaFilePath := fmt.Sprintf("%s/%s", datasetId, urfm.genMetaFileName(versionId, versionDigest))
+
+	return datasetMetaFilePath
+}
+
 func (urfm *UrchinFileManager) genLocalBlobFileParentDir(datasetId string) string {
 	dataDir := dfpath.DefaultDataDir
 	if urfm.config.DataDir != "" {
@@ -106,20 +117,20 @@ func (urfm *UrchinFileManager) genLocalBlobFileParentDir(datasetId string) strin
 	return datasetBlobFileParentDir
 }
 
-func (urfm *UrchinFileManager) genLocalBlobFileName(versionId string, versionDigest string) string {
+func (urfm *UrchinFileManager) genBlobFileName(versionId string, versionDigest string) string {
 	return fmt.Sprintf("%s_%s_%s", "blob", versionDigest, versionId)
 }
 
 func (urfm *UrchinFileManager) genLocalBlobFilePath(datasetId string, versionId string, versionDigest string) string {
 
-	datasetBlobFilePath := path.Join(urfm.genLocalBlobFileParentDir(datasetId), urfm.genLocalBlobFileName(versionId, versionDigest))
+	datasetBlobFilePath := path.Join(urfm.genLocalBlobFileParentDir(datasetId), urfm.genBlobFileName(versionId, versionDigest))
 
 	return datasetBlobFilePath
 }
 
 func (urfm *UrchinFileManager) genBackendBlobFileObjectKey(datasetId string, versionId string, versionDigest string) string {
 
-	datasetBlobFilePath := fmt.Sprintf("%s/%s", datasetId, urfm.genLocalBlobFileName(versionId, versionDigest))
+	datasetBlobFilePath := fmt.Sprintf("%s/%s", datasetId, urfm.genBlobFileName(versionId, versionDigest))
 
 	return datasetBlobFilePath
 }
@@ -141,7 +152,7 @@ func (urfm *UrchinFileManager) genLocalChunksParentDir(datasetId string, version
 		dataDir = urfm.config.DataDir
 	}
 
-	chunksParentDir := path.Join(dataDir, "chunks", datasetId, urfm.genLocalBlobFileName(versionId, versionDigest))
+	chunksParentDir := path.Join(dataDir, "chunks", datasetId, urfm.genBlobFileName(versionId, versionDigest))
 
 	return chunksParentDir
 }
@@ -168,8 +179,9 @@ func (urfm *UrchinFileManager) UploadFile(ctx *gin.Context) {
 
 	// Handle task for backend.
 	switch DataModeJson2Enum[dataMode] {
-	case Source, Meta:
-		objectKey := fmt.Sprintf("%s/%s/%s", datasetId, datasetVersionId, fileHeader.Filename)
+	case Meta:
+
+		objectKey := urfm.genBackendMetaFileObjectKey(datasetId, datasetVersionId, form.Digest)
 
 		client, err := urfm.client()
 		if err != nil {
@@ -364,8 +376,8 @@ func (urfm *UrchinFileManager) UploadFile(ctx *gin.Context) {
 			"task_id":        taskID,
 		})
 		return
-	case Ephemeral:
-		fmt.Printf("!!!upload DataCache, bucketName:%s, objectKey:%s !!!", bucketName)
+	case Source, Ephemeral:
+		fmt.Printf("!!!upload Source or DataCache, bucketName:%s, objectKey:%s !!!", bucketName)
 		ctx.Status(http.StatusOK)
 		return
 	}
@@ -384,9 +396,49 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 	statDataMode := statParams.DataMode
 
 	switch DataModeJson2Enum[statDataMode] {
+	case Meta:
+		bucketName := "urchincache"
+		backendMetaFileObjectKey := urfm.genBackendMetaFileObjectKey(statParams.DatasetId, statParams.DatasetVersionId, statParams.Digest)
+		client, err := urfm.client()
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return
+		}
+		_, isExist, err := client.GetObjectMetadata(ctx, bucketName, backendMetaFileObjectKey)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return
+		}
+
+		if !isExist {
+
+			backendFileNotFoundStat := urchinstatus.NewStatus(urchinstatus.NotFound)
+
+			ctx.JSON(http.StatusOK, gin.H{
+				"status_code":        backendFileNotFoundStat.StatusCode,
+				"status_msg":         backendFileNotFoundStat.StatusMessage,
+				"mode":               statParams.DataMode,
+				"dataset_id":         statParams.DatasetId,
+				"dataset_version_id": statParams.DatasetVersionId,
+				"digest":             statParams.Digest,
+			})
+		} else {
+			backendFileExistStat := urchinstatus.NewStatus(urchinstatus.Exist)
+
+			ctx.JSON(http.StatusOK, gin.H{
+				"status_code":        backendFileExistStat.StatusCode,
+				"status_msg":         backendFileExistStat.StatusMessage,
+				"mode":               statParams.DataMode,
+				"dataset_id":         statParams.DatasetId,
+				"dataset_version_id": statParams.DatasetVersionId,
+				"digest":             statParams.Digest,
+			})
+		}
+
+		return
 	case Blob:
 
-		//ToDo: get dataset source replicas filepath
+		//ToDo:get dataset source replicas filepath
 		bucketName := "urchincache"
 		backendBlobFileObjectKey := urfm.genBackendBlobFileObjectKey(statParams.DatasetId, statParams.DatasetVersionId, statParams.Digest)
 		client, err := urfm.client()
@@ -447,8 +499,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 			"dataset_version_id": statParams.DatasetVersionId,
 			"digest":             statParams.Digest,
 		})
-		return
-	case Meta:
 		return
 	case Chunk:
 		isExist, err := urfm.checkLocalChunkFile(statParams)
