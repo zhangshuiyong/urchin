@@ -114,7 +114,7 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 		peerTaskManager: peerTaskManager,
 		storageManager:  storageManager,
 		peerIDGenerator: peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
-		urchinPeer:      urchinpeers.NewPeer(peerHost),
+		urchinPeer:      urchinpeers.NewPeer(peerHost, &cfg.Storage),
 	}
 	router := o.initRouter(cfg, logDir)
 	o.Server = &http.Server{
