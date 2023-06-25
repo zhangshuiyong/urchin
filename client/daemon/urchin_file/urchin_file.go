@@ -49,24 +49,14 @@ const (
 	Blob
 )
 
-// DataMode Enum json value maps for DataMode.
 var (
-	DataModeEnum2Json = map[int32]string{
-		0: "Source",
-		1: "Meta",
-		2: "Ephemeral",
-		3: "Chunk",
-		4: "ChunkEnd",
-		5: "Blob",
-	}
-
 	DataModeJson2Enum = map[string]int32{
-		"Source":    0,
-		"Meta":      1,
-		"Ephemeral": 2,
-		"Chunk":     3,
-		"ChunkEnd":  4,
-		"Blob":      5,
+		"Source":    Source,
+		"Meta":      Meta,
+		"Ephemeral": Ephemeral,
+		"Chunk":     Chunk,
+		"ChunkEnd":  ChunkEnd,
+		"Blob":      Blob,
 	}
 )
 
@@ -100,9 +90,7 @@ func (urfm *UrchinFileManager) genMetaFileName(versionId string, versionDigest s
 }
 
 func (urfm *UrchinFileManager) genBackendMetaFileObjectKey(datasetId string, versionId string, versionDigest string) string {
-
 	datasetMetaFilePath := fmt.Sprintf("%s/%s", datasetId, urfm.genMetaFileName(versionId, versionDigest))
-
 	return datasetMetaFilePath
 }
 
@@ -122,16 +110,12 @@ func (urfm *UrchinFileManager) genBlobFileName(versionId string, versionDigest s
 }
 
 func (urfm *UrchinFileManager) genLocalBlobFilePath(datasetId string, versionId string, versionDigest string) string {
-
 	datasetBlobFilePath := path.Join(urfm.genLocalBlobFileParentDir(datasetId), urfm.genBlobFileName(versionId, versionDigest))
-
 	return datasetBlobFilePath
 }
 
 func (urfm *UrchinFileManager) genBackendBlobFileObjectKey(datasetId string, versionId string, versionDigest string) string {
-
 	datasetBlobFilePath := fmt.Sprintf("%s/%s", datasetId, urfm.genBlobFileName(versionId, versionDigest))
-
 	return datasetBlobFilePath
 }
 
@@ -140,9 +124,7 @@ func (urfm *UrchinFileManager) genLocalChunkFileName(chunkNum uint64, chunkStart
 }
 
 func (urfm *UrchinFileManager) genLocalChunkFilePath(chunksParentDir string, chunkNum uint64, chunkStart uint64) string {
-
 	chunkFilePath := path.Join(chunksParentDir, urfm.genLocalChunkFileName(chunkNum, chunkStart))
-
 	return chunkFilePath
 }
 
@@ -153,13 +135,11 @@ func (urfm *UrchinFileManager) genLocalChunksParentDir(datasetId string, version
 	}
 
 	chunksParentDir := path.Join(dataDir, "chunks", datasetId, urfm.genBlobFileName(versionId, versionDigest))
-
 	return chunksParentDir
 }
 
 // UploadFile uses to upload object data.
 func (urfm *UrchinFileManager) UploadFile(ctx *gin.Context) {
-
 	var form UploadFileRequest
 	if err := ctx.ShouldBind(&form); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
@@ -392,9 +372,7 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
-
 	statDataMode := statParams.DataMode
-
 	switch DataModeJson2Enum[statDataMode] {
 	case Meta:
 		bucketName := "urchincache"
@@ -411,9 +389,7 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 		}
 
 		if !isExist {
-
 			backendFileNotFoundStat := urchinstatus.NewStatus(urchinstatus.NotFound)
-
 			ctx.JSON(http.StatusOK, gin.H{
 				"status_code":        backendFileNotFoundStat.StatusCode,
 				"status_msg":         backendFileNotFoundStat.StatusMessage,
@@ -424,7 +400,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 			})
 		} else {
 			backendFileExistStat := urchinstatus.NewStatus(urchinstatus.Exist)
-
 			ctx.JSON(http.StatusOK, gin.H{
 				"status_code":        backendFileExistStat.StatusCode,
 				"status_msg":         backendFileExistStat.StatusMessage,
@@ -437,7 +412,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 
 		return
 	case Blob:
-
 		//ToDo:get dataset source replicas filepath
 		bucketName := "urchincache"
 		backendBlobFileObjectKey := urfm.genBackendBlobFileObjectKey(statParams.DatasetId, statParams.DatasetVersionId, statParams.Digest)
@@ -453,7 +427,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 		}
 
 		if !isExist {
-
 			isExist, err := urfm.checkLocalBlobFile(statParams)
 
 			if err != nil {
@@ -464,7 +437,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 
 			if isExist {
 				localFileExistStat := urchinstatus.NewStatus(urchinstatus.Exist)
-
 				ctx.JSON(http.StatusOK, gin.H{
 					"status_code":        localFileExistStat.StatusCode,
 					"status_msg":         localFileExistStat.StatusMessage,
@@ -476,7 +448,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 				return
 			} else {
 				localFileNotFoundStat := urchinstatus.NewStatus(urchinstatus.NotFound)
-
 				ctx.JSON(http.StatusOK, gin.H{
 					"status_code":        localFileNotFoundStat.StatusCode,
 					"status_msg":         localFileNotFoundStat.StatusMessage,
@@ -490,7 +461,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 		}
 
 		backendFileExistStat := urchinstatus.NewStatus(urchinstatus.Exist)
-
 		ctx.JSON(http.StatusOK, gin.H{
 			"status_code":        backendFileExistStat.StatusCode,
 			"status_msg":         backendFileExistStat.StatusMessage,
@@ -502,16 +472,13 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 		return
 	case Chunk:
 		isExist, err := urfm.checkLocalChunkFile(statParams)
-
 		if err != nil {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 			return
 		}
-
 		if isExist {
 			localFileExistStat := urchinstatus.NewStatus(urchinstatus.Exist)
-
 			ctx.JSON(http.StatusOK, gin.H{
 				"status_code":        localFileExistStat.StatusCode,
 				"status_msg":         localFileExistStat.StatusMessage,
@@ -526,7 +493,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 			return
 		} else {
 			localFileNotFoundStat := urchinstatus.NewStatus(urchinstatus.NotFound)
-
 			ctx.JSON(http.StatusOK, gin.H{
 				"status_code":        localFileNotFoundStat.StatusCode,
 				"status_msg":         localFileNotFoundStat.StatusMessage,
@@ -548,7 +514,6 @@ func (urfm *UrchinFileManager) StatFile(ctx *gin.Context) {
 
 func (urfm *UrchinFileManager) checkLocalBlobFile(statParams StatFileParams) (bool, error) {
 	tryLocalBlobFilePath := urfm.genLocalBlobFilePath(statParams.DatasetId, statParams.DatasetVersionId, statParams.Digest)
-
 	localBlobFileInfo, err := os.Stat(tryLocalBlobFilePath)
 	if err == nil {
 		logger.Infof("check local blob file %q exists", tryLocalBlobFilePath)
@@ -579,11 +544,8 @@ func (urfm *UrchinFileManager) deleteLocalBlobFile(datasetId string, versionId s
 }
 
 func (urfm *UrchinFileManager) checkLocalChunkFile(statParams StatFileParams) (bool, error) {
-
 	localChunksParentDir := urfm.genLocalChunksParentDir(statParams.DatasetId, statParams.DatasetVersionId, statParams.Digest)
-
 	tryLocalChunkFilePath := urfm.genLocalChunkFilePath(localChunksParentDir, statParams.ChunkNum, statParams.ChunkStart)
-
 	localChunkFileInfo, err := os.Stat(tryLocalChunkFilePath)
 	if err == nil {
 		logger.Infof("check local chunk file %q exists", tryLocalChunkFilePath)
@@ -596,23 +558,20 @@ func (urfm *UrchinFileManager) checkLocalChunkFile(statParams StatFileParams) (b
 	}
 }
 
+//ToDo: validate chunk file blob file digest
 func (urfm *UrchinFileManager) validateLocalChunkFile(localFileSize uint64, statParams StatFileParams) bool {
-
 	chunkEnd := statParams.ChunkStart + statParams.ChunkSize
-
 	return localFileSize == statParams.ChunkSize && chunkEnd >= 0 && chunkEnd <= statParams.TotalSize
 }
 
 //deleteLocalChunks to save local disk space
 func (urfm *UrchinFileManager) deleteLocalChunks(datasetId string, versionId string, versionDigest *digest.Digest) error {
-
 	localChunksParentDir := urfm.genLocalChunksParentDir(datasetId, versionId, versionDigest.String())
 	_, err := os.Stat(localChunksParentDir)
 	if err == nil {
 		logger.Infof("Chunks Dir %q exists, delete it", localChunksParentDir)
 		os.RemoveAll(localChunksParentDir)
 	}
-
 	return err
 }
 
@@ -622,63 +581,49 @@ func (urfm *UrchinFileManager) storeLocalChunks(datasetId string, versionId stri
 		return err
 	}
 	defer uploadChunkFile.Close()
-
 	chunksParentDir := urfm.genLocalChunksParentDir(datasetId, versionId, versionDigest)
-
 	if err := os.MkdirAll(chunksParentDir, defaultDirectoryMode); err != nil && !os.IsExist(err) {
 		return err
 	}
-
 	chunkFilePath := urfm.genLocalChunkFilePath(chunksParentDir, chunkNum, chunkStart)
 	_, err = os.Stat(chunkFilePath)
 	if err == nil {
-		// remove exist file
 		logger.Infof("destination chunk file %q exists, purge it first", chunkFilePath)
 		os.Remove(chunkFilePath)
 	}
-
 	localChunkFile, err := os.OpenFile(chunkFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, defaultFileMode)
 	if err != nil {
 		logger.Errorf("open destination chunk file error: %s", err)
 		return err
 	}
 	defer localChunkFile.Close()
-
 	n, err := io.Copy(localChunkFile, uploadChunkFile)
 	logger.Debugf("copied chunk file data %d bytes to %s", n, chunkFilePath)
 	return err
 }
 
 func (urfm *UrchinFileManager) mergeLocalChunks(datasetId string, versionId string, versionDigest string) error {
-
 	localBlobFileParentDir := urfm.genLocalBlobFileParentDir(datasetId)
 	if err := os.MkdirAll(localBlobFileParentDir, defaultDirectoryMode); err != nil && !os.IsExist(err) {
 		return err
 	}
-
 	localBlobFilePath := urfm.genLocalBlobFilePath(datasetId, versionId, versionDigest)
-
 	_, err := os.Stat(localBlobFilePath)
 	if err == nil {
 		// remove exist file
 		logger.Infof("destination datasetBlobFile %q exists, purge it first", localBlobFilePath)
 		os.Remove(localBlobFilePath)
 	}
-
 	localBlobFile, err := os.OpenFile(localBlobFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, defaultFileMode)
 	if err != nil {
 		return err
 	}
 	defer localBlobFile.Close()
-
 	localChunksParentDir := urfm.genLocalChunksParentDir(datasetId, versionId, versionDigest)
-
 	if err := os.MkdirAll(localChunksParentDir, defaultDirectoryMode); err != nil && !os.IsExist(err) {
 		return err
 	}
-
 	localChunkFileInfos, err := os.ReadDir(localChunksParentDir)
-
 	if err != nil {
 		return err
 	}
