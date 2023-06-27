@@ -117,7 +117,7 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 		peerTaskManager:   peerTaskManager,
 		storageManager:    storageManager,
 		peerIDGenerator:   peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
-		urchinPeer:        urchinpeers.NewPeer(peerHost),
+		urchinPeer:        urchinpeers.NewPeer(peerHost, &cfg.Storage),
 		urchinTaskManager: urchintask.NewUrchinTaskManager(peerTaskManager),
 		urchinFileManager: nil,
 	}
@@ -221,7 +221,7 @@ func (o *objectStorage) getHealth(ctx *gin.Context) {
 // headObject uses to head object.
 func (o *objectStorage) headObject(ctx *gin.Context) {
 	var params ObjectParams
-	if err := ctx.ShouldBindQuery(&params); err != nil {
+	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
