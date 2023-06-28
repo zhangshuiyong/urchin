@@ -70,7 +70,7 @@ database:
   mysql:
     user: dragonfly
     password: dragonfly
-    host: host.docker.internal
+    host: __IP__
     port: 3306
     dbname: manager
     migrate: true
@@ -88,7 +88,7 @@ database:
   redis:
     # Redis addresses.
     addrs:
-      - "host.docker.internal:6379"
+      - "__IP__:6379"
     # Redis password.
     password: dragonfly
     # Redis DB name.

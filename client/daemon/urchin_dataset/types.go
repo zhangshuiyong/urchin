@@ -1,6 +1,8 @@
 package urchin_dataset
 
-var RedisClusterIP = []string{"192.168.23.209:6379"}
+var RedisClusterIP = []string{"127.0.0.1:6379"}
+
+//var RedisClusterIP = []string{"192.168.23.209:6379"}
 
 const (
 	StoragePrefix        = "urchin"

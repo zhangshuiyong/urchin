@@ -48,6 +48,26 @@ services:
       - 65003:65003
       - 8080:8080
 
+  dfdaemon:
+    image: dragonflyoss/dfdaemon:latest
+    depends_on:
+      - manager
+      - scheduler
+      - seed-peer
+    container_name: peer
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "/bin/grpc_health_probe -addr=:65000 || exit 1"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - ./log/peer:/var/log/dragonfly/daemon
+      - ./config/dfget.yaml:/etc/dragonfly/dfget.yaml:ro
+    ports:
+      - 65000:65000
+      - 65001:65001
+      - 65002:65002
 
   scheduler:
     image: dragonflyoss/scheduler:latest

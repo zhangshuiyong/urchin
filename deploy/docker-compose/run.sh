@@ -58,11 +58,11 @@ run_container(){
         -v ${DIR}/config/scheduler.yaml:/etc/dragonfly/scheduler.yaml \
         ${REPO}/scheduler:${TAG}
 
-    printf "create dragonfly-dfdaemon "
-    ${RUNTIME} run -d --name dragonfly-dfdaemon --restart=always --net=host \
-        -v /tmp/log/dragonfly:/var/log/dragonfly \
-        -v ${DIR}/config/dfget.yaml:/etc/dragonfly/dfget.yaml \
-        ${REPO}/dfdaemon:${TAG}
+#    printf "create dragonfly-dfdaemon "
+#    ${RUNTIME} run -d --name dragonfly-dfdaemon --restart=always --net=host \
+#        -v /tmp/log/dragonfly:/var/log/dragonfly \
+#        -v ${DIR}/config/dfget.yaml:/etc/dragonfly/dfget.yaml \
+#        ${REPO}/dfdaemon:${TAG}
 }
 
 prepare
