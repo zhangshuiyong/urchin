@@ -1,0 +1,97 @@
+server:
+  advertiseIP: 127.0.0.1
+  advertisePort: 8004
+  listenIP: 0.0.0.0
+  port: 8002
+  host: foo
+  workHome: foo
+  cacheDir: foo
+  logDir: foo
+  logRotateMaxSize: 1024
+  logRotateMaxBackups: 20
+  logRotateMaxAge: 7
+  pluginDir: foo
+  dataDir: foo
+
+scheduler:
+  algorithm: default
+  backToSourceCount: 3
+  retryBackToSourceLimit: 2
+  retryLimit: 10
+  retryInterval: 10s
+  gc:
+    pieceDownloadTimeout: 5s
+    peerGCInterval: 10s
+    peerTTL: 60s
+    taskGCInterval: 30s
+    hostGCInterval: 1m
+    hostTTL: 1m
+
+dynConfig:
+  refreshInterval: 10s
+
+host:
+  idc: foo
+  location: baz
+
+manager:
+  addr: 127.0.0.1:65003
+  schedulerClusterID: 1
+  keepAlive:
+    interval: 5s
+
+seedPeer:
+  enable: true
+
+job:
+  enable: true
+  globalWorkerNum: 1
+  schedulerWorkerNum: 1
+  localWorkerNum: 5
+  redis:
+    addrs: [ "foo", "bar" ]
+    masterName: "baz"
+    host: 127.0.0.1
+    port: 6379
+    password: foo
+    brokerDB: 1
+    backendDB: 2
+
+storage:
+  maxSize: 1
+  maxBackups: 1
+  bufferSize: 1
+
+metrics:
+  enable: false
+  addr: ":8000"
+  enableHost: true
+
+security:
+  autoIssueCert: true
+  caCert: testdata/ca.crt
+  tlsVerify: true
+  tlsPolicy: force
+  certSpec:
+    dnsNames:
+      - foo
+    ipAddresses:
+      - 0.0.0.0
+    validityPeriod: 10m
+
+network:
+  enableIPv6: true
+
+networkTopology:
+  enable: true
+  syncInterval: 30s
+  collectInterval: 60s
+  probe:
+    queueLength: 5
+    syncInterval: 30s
+    syncCount: 50
+
+trainer:
+  enable: false
+  addr: "127.0.0.1:9000"
+  interval: 10m

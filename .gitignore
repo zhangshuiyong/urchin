@@ -4,9 +4,6 @@
 *.dll
 *.so
 *.dylib
-*.yaml
-*.sh
-*.old
 bin/
 
 # Test binary, built with `go test -c`
@@ -24,6 +21,7 @@ vendor/
 target/
 scheduler/test/misc
 manager/dist/*
+deploy/docker-compose/config/*
 !manager/dist/.gitkeep
 .chglog
 
