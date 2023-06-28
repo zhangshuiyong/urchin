@@ -21,6 +21,7 @@ vendor/
 target/
 scheduler/test/misc
 manager/dist/*
+deploy/docker-compose/config/*
 !manager/dist/.gitkeep
 .chglog
 
