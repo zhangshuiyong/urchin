@@ -96,7 +96,7 @@ host:
 # Manager configuration.
 manager:
   # addr is manager access address.
-  addr: "host.docker.internal:65003"
+  addr: "__IP__:65003"
   # schedulerClusterID cluster id to which scheduler instance belongs.
   schedulerClusterID: "1"
   # keepAlive keep alive configuration.
@@ -126,7 +126,7 @@ job:
   redis:
     # Redis addresses.
     addrs:
-      - "host.docker.internal:6379"
+      - "__IP__:6379"
     # Redis username.
     username: ''
     # Redis password.
