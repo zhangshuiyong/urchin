@@ -455,7 +455,7 @@ func (s *server) recursiveDownloadWithP2PMetadata(
 	// The target format is GMT time, need convert to UTC time first
 	urlMeta.Header[source.ListMetadataExpire] = time.Now().Add(s.cacheRecursiveMetadata).UTC().Format(source.ExpireLayout)
 
-	rc, _, err := s.peerTaskManager.StartStreamTask(ctx, &peer.StreamTaskRequest{
+	rc, _, _, _, err := s.peerTaskManager.StartStreamTask(ctx, &peer.StreamTaskRequest{
 		URL:     purl.String(),
 		URLMeta: &urlMeta,
 		PeerID:  idgen.PeerIDV1(s.peerHost.Ip),

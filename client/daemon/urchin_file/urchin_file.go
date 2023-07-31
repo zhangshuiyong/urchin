@@ -5,7 +5,7 @@ import (
 	"context"
 	commonv1 "d7y.io/api/pkg/apis/common/v1"
 	"d7y.io/dragonfly/v2/client/config"
-	objectImplement "d7y.io/dragonfly/v2/client/daemon/objectstorage"
+
 	"d7y.io/dragonfly/v2/client/daemon/peer"
 	"d7y.io/dragonfly/v2/client/daemon/storage"
 	urchinstatus "d7y.io/dragonfly/v2/client/daemon/urchin_status"
@@ -979,13 +979,13 @@ func (urfm *UrchinFileManager) client() (objectstorage.ObjectStorage, error) {
 }
 
 func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
-	var params objectImplement.ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
-	var query objectImplement.GetObjectQuery
+	var query objectstorage.GetObjectQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -1009,13 +1009,13 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 	)
 
 	//1. Check Endpoint
-	isInControl := objectImplement.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
 	if !isInControl {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": "DataSource Not In BackendPool:" + http.StatusText(http.StatusForbidden)})
 		return
 	}
 	//2. Check Target Bucket
-	if !objectImplement.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
+	if !objectstorage.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": "please check datasource bucket & cache bucket is in control & exist in config"})
 		return
 	}
@@ -1027,7 +1027,7 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 	}
 
 	//3. Check Current Peer CacheBucket is existed datasource Object
-	dstClient, err := objectImplement.Client(urfm.config.ObjectStorage.Name,
+	dstClient, err := objectstorage.Client(urfm.config.ObjectStorage.Name,
 		urfm.config.ObjectStorage.Region,
 		urfm.config.ObjectStorage.Endpoint,
 		urfm.config.ObjectStorage.AccessKey,
@@ -1045,13 +1045,13 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 		meta, isExist, err := dstClient.GetObjectMetadata(ctxSub, urfm.config.ObjectStorage.CacheBucket, objectKey)
 		if isExist && err == nil {
 			//exist, skip retry
-			return objectImplement.RetryRes{Res: meta, IsExist: isExist}, true, nil
-		} else if err != nil && objectImplement.NeedRetry(err) {
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, false, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
 		} else {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, true, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
 		}
 	})
 
@@ -1066,7 +1066,7 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 		dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
 	}
 
-	res := anyRes.(objectImplement.RetryRes)
+	res := anyRes.(objectstorage.RetryRes)
 	if res.IsExist {
 		meta := res.Res
 		ctx.JSON(http.StatusOK, gin.H{
@@ -1124,8 +1124,8 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 	}
 
 	//DstDataSet Not Exist In DstDataCenter, Move it from DataSource to Dst DataCenter
-	//5. Check dataSource is exist this Object
-	sourceClient, err := objectImplement.Client(urfm.config.SourceObs.Name,
+	//5. Check dataSource is existed this Object
+	sourceClient, err := objectstorage.Client(urfm.config.SourceObs.Name,
 		urfm.config.SourceObs.Region,
 		urfm.config.SourceObs.Endpoint,
 		urfm.config.SourceObs.AccessKey,
@@ -1143,12 +1143,12 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 		meta, isExist, err := sourceClient.GetObjectMetadata(ctx, bucketName, objectKey)
 		if isExist && err == nil {
 			//exist, skip retry
-			return objectImplement.RetryRes{Res: meta, IsExist: isExist}, true, nil
-		} else if err != nil && objectImplement.NeedRetry(err) {
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, false, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
 		} else {
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, true, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
 		}
 	})
 
@@ -1157,7 +1157,7 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
-	res = anyRes.(objectImplement.RetryRes)
+	res = anyRes.(objectstorage.RetryRes)
 	if !res.IsExist {
 		logger.Errorf("dataSource %s bucket %s object %s not found", urfm.config.SourceObs.Endpoint, bucketName, objectKey)
 		ctx.JSON(http.StatusNotFound, gin.H{"errors": "dataSource:" + urfm.config.SourceObs.Endpoint + "." + bucketName + "/" + objectKey + " not found"})
@@ -1188,7 +1188,7 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 		return
 	}
 
-	signURL, urlMeta = objectImplement.ConvertSignURL(ctx, signURL, urlMeta)
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	log := logger.WithTaskID(taskID)
@@ -1229,7 +1229,7 @@ func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
 
 			log.Infof("pushToOwnBackend dstEndpoint %s object %s to sourceBucket %s", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName)
 
-			if err = objectImplement.PushToOwnBackend(context.Background(), urfm.config.ObjectStorage.Name, urfm.config.ObjectStorage.CacheBucket, objectKey, meta, reader, dstClient); err != nil {
+			if err = objectstorage.PushToOwnBackend(context.Background(), urfm.config.ObjectStorage.Name, urfm.config.ObjectStorage.CacheBucket, objectKey, meta, reader, dstClient); err != nil {
 				log.Errorf("pushToOwnBackend dstEndpoint %s object %s to sourceBucket %s taskID:%s failed: %s and delete caching task", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID, err.Error())
 				urfm.deleteCacheTaskInMap(taskID)
 
@@ -1282,13 +1282,13 @@ func (urfm *UrchinFileManager) deleteCacheTaskInMap(taskID string) {
 
 // CheckObject check the object taskID status
 func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
-	var params objectImplement.ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
-	var query objectImplement.GetObjectQuery
+	var query objectstorage.GetObjectQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -1311,13 +1311,13 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 	)
 
 	//1. Check Endpoint
-	isInControl := objectImplement.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
 	if !isInControl {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": "DataSource Not In BackendPool:" + http.StatusText(http.StatusForbidden)})
 		return
 	}
 	//2. Check Target Bucket
-	if !objectImplement.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
+	if !objectstorage.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": "checkObject,please check datasource bucket & cache bucket is in control & exist in config"})
 		return
 	}
@@ -1329,7 +1329,7 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 	}
 
 	//3. Check Current Peer CacheBucket is exist datasource Object
-	dstClient, err := objectImplement.Client(urfm.config.ObjectStorage.Name,
+	dstClient, err := objectstorage.Client(urfm.config.ObjectStorage.Name,
 		urfm.config.ObjectStorage.Region,
 		urfm.config.ObjectStorage.Endpoint,
 		urfm.config.ObjectStorage.AccessKey,
@@ -1347,13 +1347,13 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 		meta, isExist, err := dstClient.GetObjectMetadata(ctxSub, urfm.config.ObjectStorage.CacheBucket, objectKey)
 		if isExist && err == nil {
 			//exist, skip retry
-			return objectImplement.RetryRes{Res: meta, IsExist: isExist}, true, nil
-		} else if err != nil && objectImplement.NeedRetry(err) {
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, false, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
 		} else {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, true, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
 		}
 	})
 
@@ -1368,7 +1368,7 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 		dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
 	}
 
-	res := anyRes.(objectImplement.RetryRes)
+	res := anyRes.(objectstorage.RetryRes)
 	if res.IsExist {
 		dstMeta := res.Res
 
@@ -1427,7 +1427,7 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 
 	//DstDataSet Not Exist In DstDataCenter, Move it from DataSource to Dst DataCenter
 	//5. Check dataSource is existed this Object
-	sourceClient, err := objectImplement.Client(urfm.config.SourceObs.Name,
+	sourceClient, err := objectstorage.Client(urfm.config.SourceObs.Name,
 		urfm.config.SourceObs.Region,
 		urfm.config.SourceObs.Endpoint,
 		urfm.config.SourceObs.AccessKey,
@@ -1445,12 +1445,12 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 		meta, isExist, err := sourceClient.GetObjectMetadata(ctx, bucketName, objectKey)
 		if isExist && err == nil {
 			//exist, skip retry
-			return objectImplement.RetryRes{Res: meta, IsExist: isExist}, true, nil
-		} else if err != nil && objectImplement.NeedRetry(err) {
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, false, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
 		} else {
-			return objectImplement.RetryRes{Res: nil, IsExist: false}, true, err
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
 		}
 	})
 
@@ -1459,7 +1459,7 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
-	res = anyRes.(objectImplement.RetryRes)
+	res = anyRes.(objectstorage.RetryRes)
 	if !res.IsExist {
 		logger.Errorf("dataSource %s bucket %s object %s not found", urfm.config.SourceObs.Endpoint, bucketName, objectKey)
 		ctx.JSON(http.StatusNotFound, gin.H{"errors": "dataSource:" + urfm.config.SourceObs.Endpoint + "." + bucketName + "/" + objectKey + " not found"})
@@ -1476,7 +1476,7 @@ func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
 		return
 	}
 
-	signURL, urlMeta = objectImplement.ConvertSignURL(ctx, signURL, urlMeta)
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	log := logger.WithTaskID(taskID)

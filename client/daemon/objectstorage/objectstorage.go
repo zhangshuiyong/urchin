@@ -230,91 +230,9 @@ func (o *objectStorage) getHealth(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, http.StatusText(http.StatusOK))
 }
 
-func NeedRetry(err error) bool {
-	errMsg := strings.ToLower(err.Error())
-	return strings.Contains(errMsg, "context deadline exceeded") ||
-		strings.Contains(errMsg, "connection failed") ||
-		strings.Contains(errMsg, "timeout")
-}
-
-func ConfirmDataSourceInBackendPool(config *config.DaemonOption, sourceEndpoint string) bool {
-	//check sourceEndpoint is in control by BackendPool
-	for _, backend := range config.BackendPool {
-		if sourceEndpoint == backend.Endpoint {
-			config.SourceObs.Endpoint = backend.Endpoint
-			config.SourceObs.Name = backend.Name
-			config.SourceObs.Region = backend.Region
-			config.SourceObs.AccessKey = backend.AccessKey
-			config.SourceObs.SecretKey = backend.SecretKey
-			return true
-		}
-	}
-	logger.Errorf("sourceEndpoint %s  is not in control by backendPool", sourceEndpoint)
-	return false
-}
-
-func CheckAllCacheBucketIsInControl(config *config.DaemonOption) bool {
-	//Every Dst Peer check CacheBucket is existed by itself
-	client, err := Client(config.ObjectStorage.Name,
-		config.ObjectStorage.Region,
-		config.ObjectStorage.Endpoint,
-		config.ObjectStorage.AccessKey,
-		config.ObjectStorage.SecretKey)
-	if err != nil {
-		return false
-	}
-
-	isExist, err := client.IsBucketExist(context.Background(), config.ObjectStorage.CacheBucket)
-	if !isExist {
-		logger.Errorf("Dst Peer Obs cacheBucket %s do not exist,please check config, err:%v", config.ObjectStorage.CacheBucket, err)
-		return false
-	}
-
-	//check BackendPool cacheBucket is in control
-	allCacheBucketsInControl := len(config.BackendPool)
-	for _, backend := range config.BackendPool {
-		for _, bucket := range backend.Buckets {
-			if backend.CacheBucket == bucket.Name && bucket.Enable {
-				allCacheBucketsInControl--
-				break
-			}
-		}
-	}
-
-	if allCacheBucketsInControl != 0 {
-		logger.Errorf("Not all BackendPool cacheBucket config is allowed, please check config")
-		return false
-	}
-	return true
-}
-
-func CheckTargetBucketIsInControl(config *config.DaemonOption, targetEndpoint, targetBucketName string) bool {
-	//check target bucket is in control
-	targetBucketIsInControl := false
-
-	for _, backend := range config.BackendPool {
-		if targetEndpoint == backend.Endpoint {
-			for _, bucket := range backend.Buckets {
-				if targetBucketName == bucket.Name && bucket.Enable {
-					targetBucketIsInControl = true
-					break
-				}
-			}
-			break
-		}
-	}
-
-	if !targetBucketIsInControl {
-		logger.Errorf("Peer binding targetEndpoint %s  have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
-		return false
-	}
-
-	return true
-}
-
 // headObject uses to head object.
 func (o *objectStorage) headObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -335,19 +253,19 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 	)
 
 	//1. Check Endpoint
-	isInControl := ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
 	if !isInControl {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
 		return
 	}
 	//2. Check Target Bucket
-	if !CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": "please check datasource bucket & cache bucket is in control & exist in config"})
 		return
 	}
 
 	//3. Check Object
-	client, err := Client(o.config.SourceObs.Name,
+	client, err := objectstorage.Client(o.config.SourceObs.Name,
 		o.config.SourceObs.Region,
 		o.config.SourceObs.Endpoint,
 		o.config.SourceObs.AccessKey,
@@ -366,7 +284,7 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 		if isExist {
 			//exist, skip retry
 			return meta, isExist, nil
-		} else if err != nil && NeedRetry(err) {
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
 			return nil, false, err
 		} else if err != nil && strings.Contains(err.Error(), "404") {
@@ -405,13 +323,13 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 
 // getObject uses to download object data.
 func (o *objectStorage) getObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
-	var query GetObjectQuery
+	var query objectstorage.GetObjectQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -434,13 +352,13 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 	)
 
 	//1. Check Endpoint
-	isInControl := ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
 	if !isInControl {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
 		return
 	}
 	//2. Check Target Bucket
-	if !CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
 		return
 	}
@@ -452,7 +370,7 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 	}
 
 	//3. Check dataSource Object
-	sourceClient, err := Client(o.config.SourceObs.Name,
+	sourceClient, err := objectstorage.Client(o.config.SourceObs.Name,
 		o.config.SourceObs.Region,
 		o.config.SourceObs.Endpoint,
 		o.config.SourceObs.AccessKey,
@@ -472,7 +390,7 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 		if isExist {
 			//exist, skip retry
 			return meta, isExist, nil
-		} else if err != nil && NeedRetry(err) {
+		} else if err != nil && objectstorage.NeedRetry(err) {
 			//retry this request, do not cancel this request
 			return nil, false, err
 		} else if err != nil && strings.Contains(err.Error(), "404") {
@@ -524,7 +442,7 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 		return
 	}
 
-	signURL, urlMeta = ConvertSignURL(ctx, signURL, urlMeta)
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	log := logger.WithTaskID(taskID)
 	log.Infof("get object %s meta: %s %#v", objectKey, signURL, urlMeta)
@@ -554,7 +472,7 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 
 // destroyObject uses to delete object data.
 func (o *objectStorage) destroyObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -565,7 +483,7 @@ func (o *objectStorage) destroyObject(ctx *gin.Context) {
 		objectKey  = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
 	)
 
-	client, err := Client(o.config.ObjectStorage.Name,
+	client, err := objectstorage.Client(o.config.ObjectStorage.Name,
 		o.config.ObjectStorage.Region,
 		o.config.ObjectStorage.Endpoint,
 		o.config.ObjectStorage.AccessKey,
@@ -581,7 +499,7 @@ func (o *objectStorage) destroyObject(ctx *gin.Context) {
 		defer cancel()
 
 		if err := client.DeleteObject(ctxSub, bucketName, objectKey); err != nil {
-			if NeedRetry(err) {
+			if objectstorage.NeedRetry(err) {
 				return nil, false, err
 			}
 
@@ -600,7 +518,7 @@ func (o *objectStorage) destroyObject(ctx *gin.Context) {
 
 // putObject uses to upload object data.
 func (o *objectStorage) putObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -622,12 +540,12 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 	)
 
 	//1. Check bingding endpoint Bucket is Control
-	if !CheckTargetBucketIsInControl(o.config, o.config.ObjectStorage.Endpoint, bucketName) {
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, o.config.ObjectStorage.Endpoint, bucketName) {
 		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
 		return
 	}
 
-	dstClient, err := Client(o.config.ObjectStorage.Name,
+	dstClient, err := objectstorage.Client(o.config.ObjectStorage.Name,
 		o.config.ObjectStorage.Region,
 		o.config.ObjectStorage.Endpoint,
 		o.config.ObjectStorage.AccessKey,
@@ -643,7 +561,7 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 
 		signURL, err := dstClient.GetSignURL(ctxSub, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
 		if err != nil {
-			if NeedRetry(err) {
+			if objectstorage.NeedRetry(err) {
 				return nil, false, err
 			}
 
@@ -669,7 +587,7 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 	if maxReplicas == 0 {
 		maxReplicas = o.config.ObjectStorage.MaxReplicas
 	}
-	signURL, urlMeta = ConvertSignURL(ctx, signURL, urlMeta)
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 	// Initialize task id and peer id.
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	peerID := o.peerIDGenerator.PeerID()
@@ -898,63 +816,4 @@ func (o *objectStorage) importObjectToSeedPeer(ctx context.Context, seedPeerHost
 	}
 
 	return nil
-}
-
-// client uses to generate client of object storage.
-func Client(Name, Region, Endpoint, AccessKey, SecretKey string) (objectstorage.ObjectStorage, error) {
-	//config, err := o.dynconfig.GetObjectStorage()
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	client, err := objectstorage.New(Name, Region, Endpoint, AccessKey, SecretKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-func PushToOwnBackend(ctx context.Context, storageName, cacheBucket, objectKey string, meta *objectstorage.ObjectMetadata, pr io.ReadCloser, client objectstorage.ObjectStorage) error {
-	logger.Debugf("pushToOwnBackend begin, objectKey:%s digest:%s storage cacheBucket:%s, name:%s", objectKey, meta.Digest, cacheBucket)
-	if storageName == "sugon" || storageName == "starlight" {
-		err := client.PutObjectWithTotalLength(ctx, cacheBucket, objectKey, meta.Digest, meta.ContentLength, pr)
-		if err != nil {
-			return err
-		}
-	} else {
-		err := client.PutObject(ctx, cacheBucket, objectKey, meta.Digest, pr)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ConvertSignURL(ctx *gin.Context, signURL string, urlMeta *commonv1.UrlMeta) (string, *commonv1.UrlMeta) {
-	signParse, err := url.Parse(signURL)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
-		return signURL, urlMeta
-	}
-	urlMap, err := url.ParseQuery(signParse.RawQuery)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
-		return signURL, urlMeta
-	}
-	if len(urlMap["token"]) > 0 && urlMap["token"][0] != "" {
-		urlMeta.Header = make(map[string]string)
-		urlMeta.Header["token"] = urlMap["token"][0]
-		urlMap.Del("token")
-		signParse.RawQuery = urlMap.Encode()
-		signURL = signParse.String()
-	}
-	if len(urlMap["bihu-token"]) > 0 && urlMap["bihu-token"][0] != "" {
-		urlMeta.Header = make(map[string]string)
-		urlMeta.Header["bihu-token"] = urlMap["bihu-token"][0]
-		urlMap.Del("bihu-token")
-		signParse.RawQuery = urlMap.Encode()
-		signURL = signParse.String()
-	}
-	return signURL, urlMeta
 }

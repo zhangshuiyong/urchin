@@ -20,8 +20,15 @@ package objectstorage
 
 import (
 	"context"
+	commonv1 "d7y.io/api/pkg/apis/common/v1"
+	"d7y.io/dragonfly/v2/client/config"
+	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -139,6 +146,20 @@ type objectStorage struct {
 // Option is a functional option for configuring the objectStorage.
 type Option func(o *objectStorage)
 
+type RetryRes struct {
+	Res     *ObjectMetadata
+	IsExist bool
+}
+
+type ObjectParams struct {
+	ID        string `uri:"id" binding:"required"`
+	ObjectKey string `uri:"object_key" binding:"required"`
+}
+
+type GetObjectQuery struct {
+	Filter string `form:"filter" binding:"omitempty"`
+}
+
 // WithS3ForcePathStyle set the S3ForcePathStyle for objectStorage.
 func WithS3ForcePathStyle(s3ForcePathStyle bool) Option {
 	return func(o *objectStorage) {
@@ -177,4 +198,139 @@ func New(name, region, endpoint, accessKey, secretKey string, options ...Option)
 	}
 
 	return nil, fmt.Errorf("unknow service name %s", name)
+}
+
+func Client(Name, Region, Endpoint, AccessKey, SecretKey string) (ObjectStorage, error) {
+	client, err := New(Name, Region, Endpoint, AccessKey, SecretKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+func PushToOwnBackend(ctx context.Context, storageName, cacheBucket, objectKey string, meta *ObjectMetadata, pr io.ReadCloser, client ObjectStorage) error {
+	logger.Debugf("pushToOwnBackend begin, objectKey:%s digest:%s storage cacheBucket:%s, name:%s", objectKey, meta.Digest, cacheBucket)
+	if storageName == "sugon" || storageName == "starlight" {
+		err := client.PutObjectWithTotalLength(ctx, cacheBucket, objectKey, meta.Digest, meta.ContentLength, pr)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := client.PutObject(ctx, cacheBucket, objectKey, meta.Digest, pr)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ConvertSignURL(ctx *gin.Context, signURL string, urlMeta *commonv1.UrlMeta) (string, *commonv1.UrlMeta) {
+	signParse, err := url.Parse(signURL)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return signURL, urlMeta
+	}
+	urlMap, err := url.ParseQuery(signParse.RawQuery)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return signURL, urlMeta
+	}
+	if len(urlMap["token"]) > 0 && urlMap["token"][0] != "" {
+		urlMeta.Header = make(map[string]string)
+		urlMeta.Header["token"] = urlMap["token"][0]
+		urlMap.Del("token")
+		signParse.RawQuery = urlMap.Encode()
+		signURL = signParse.String()
+	}
+	if len(urlMap["bihu-token"]) > 0 && urlMap["bihu-token"][0] != "" {
+		urlMeta.Header = make(map[string]string)
+		urlMeta.Header["bihu-token"] = urlMap["bihu-token"][0]
+		urlMap.Del("bihu-token")
+		signParse.RawQuery = urlMap.Encode()
+		signURL = signParse.String()
+	}
+	return signURL, urlMeta
+}
+
+func NeedRetry(err error) bool {
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "context deadline exceeded") ||
+		strings.Contains(errMsg, "connection failed") ||
+		strings.Contains(errMsg, "timeout")
+}
+
+func ConfirmDataSourceInBackendPool(config *config.DaemonOption, sourceEndpoint string) bool {
+	//check sourceEndpoint is in control by BackendPool
+	for _, backend := range config.BackendPool {
+		if sourceEndpoint == backend.Endpoint {
+			config.SourceObs.Endpoint = backend.Endpoint
+			config.SourceObs.Name = backend.Name
+			config.SourceObs.Region = backend.Region
+			config.SourceObs.AccessKey = backend.AccessKey
+			config.SourceObs.SecretKey = backend.SecretKey
+			return true
+		}
+	}
+	logger.Errorf("sourceEndpoint %s  is not in control by backendPool", sourceEndpoint)
+	return false
+}
+
+func CheckAllCacheBucketIsInControl(config *config.DaemonOption) bool {
+	//Every Dst Peer check CacheBucket is existed by itself
+	client, err := Client(config.ObjectStorage.Name,
+		config.ObjectStorage.Region,
+		config.ObjectStorage.Endpoint,
+		config.ObjectStorage.AccessKey,
+		config.ObjectStorage.SecretKey)
+	if err != nil {
+		return false
+	}
+
+	isExist, err := client.IsBucketExist(context.Background(), config.ObjectStorage.CacheBucket)
+	if !isExist {
+		logger.Errorf("Dst Peer Obs cacheBucket %s do not exist,please check config, err:%v", config.ObjectStorage.CacheBucket, err)
+		return false
+	}
+
+	//check BackendPool cacheBucket is in control
+	allCacheBucketsInControl := len(config.BackendPool)
+	for _, backend := range config.BackendPool {
+		for _, bucket := range backend.Buckets {
+			if backend.CacheBucket == bucket.Name && bucket.Enable {
+				allCacheBucketsInControl--
+				break
+			}
+		}
+	}
+
+	if allCacheBucketsInControl != 0 {
+		logger.Errorf("Not all BackendPool cacheBucket config is allowed, please check config")
+		return false
+	}
+	return true
+}
+
+func CheckTargetBucketIsInControl(config *config.DaemonOption, targetEndpoint, targetBucketName string) bool {
+	//check target bucket is in control
+	targetBucketIsInControl := false
+
+	for _, backend := range config.BackendPool {
+		if targetEndpoint == backend.Endpoint {
+			for _, bucket := range backend.Buckets {
+				if targetBucketName == bucket.Name && bucket.Enable {
+					targetBucketIsInControl = true
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if !targetBucketIsInControl {
+		logger.Errorf("Peer binding targetEndpoint %s  have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
+		return false
+	}
+
+	return true
 }
