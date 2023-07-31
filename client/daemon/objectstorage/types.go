@@ -16,7 +16,10 @@
 
 package objectstorage
 
-import "mime/multipart"
+import (
+	"d7y.io/dragonfly/v2/pkg/objectstorage"
+	"mime/multipart"
+)
 
 type ObjectParams struct {
 	ID        string `uri:"id" binding:"required"`
@@ -32,4 +35,9 @@ type PutObjectRequset struct {
 
 type GetObjectQuery struct {
 	Filter string `form:"filter" binding:"omitempty"`
+}
+
+type RetryRes struct {
+	Res     *objectstorage.ObjectMetadata
+	IsExist bool
 }

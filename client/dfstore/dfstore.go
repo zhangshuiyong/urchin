@@ -27,6 +27,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strconv"
 
@@ -40,16 +41,16 @@ import (
 // Dfstore is the interface used for object storage.
 type Dfstore interface {
 	// GetObjectMetadataRequestWithContext returns *http.Request of getting object metadata.
-	GetObjectMetadataRequestWithContext(ctx context.Context, input *GetObjectMetadataInput) (*http.Request, error)
+	GetObjectMetadataRequestWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*http.Request, error)
 
 	// GetObjectMetadataWithContext returns matedata of object.
-	GetObjectMetadataWithContext(ctx context.Context, input *GetObjectMetadataInput) (*pkgobjectstorage.ObjectMetadata, error)
+	GetObjectMetadataWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*pkgobjectstorage.ObjectMetadata, error)
 
 	// GetObjectRequestWithContext returns *http.Request of getting object.
-	GetObjectRequestWithContext(ctx context.Context, input *GetObjectInput) (*http.Request, error)
+	GetObjectRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error)
 
 	// GetObjectWithContext returns data of object.
-	GetObjectWithContext(ctx context.Context, input *GetObjectInput) (io.ReadCloser, error)
+	GetObjectWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error)
 
 	// PutObjectRequestWithContext returns *http.Request of putting object.
 	PutObjectRequestWithContext(ctx context.Context, input *PutObjectInput) (*http.Request, error)
@@ -68,6 +69,24 @@ type Dfstore interface {
 
 	// IsObjectExistWithContext returns whether the object exists.
 	IsObjectExistWithContext(ctx context.Context, input *IsObjectExistInput) (bool, error)
+
+	// GetUrfsMetadataRequestWithContext returns *http.Request of getting Urfs metadata.
+	GetUrfsMetadataRequestWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*http.Request, error)
+
+	// GetUrfsMetadataWithContext returns matedata of Urfs.
+	GetUrfsMetadataWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*pkgobjectstorage.ObjectMetadata, error)
+
+	// GetUrfsRequestWithContext returns *http.Request of getting Urfs.
+	GetUrfsRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error)
+
+	// GetUrfsWithContext returns data of Urfs.
+	GetUrfsWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error)
+
+	// GetUrfsStatusRequestWithContext returns *http.Request of getting Urfs status.
+	GetUrfsStatusRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error)
+
+	// GetUrfsStatusWithContext returns schedule status of Urfs.
+	GetUrfsStatusWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error)
 }
 
 // dfstore provides object storage function.
@@ -109,6 +128,145 @@ type GetObjectMetadataInput struct {
 	ObjectKey string
 }
 
+// GetUrfsMetadataInput is used to construct request of getting object metadata.
+type GetUrfsMetadataInput struct {
+
+	// Endpoint is endpoint name.
+	Endpoint string
+
+	// BucketName is bucket name.
+	BucketName string
+
+	// ObjectKey is object key.
+	ObjectKey string
+
+	// DstPeer is target peerHost.
+	DstPeer string
+}
+
+// Validate validates GetUrfsMetadataInput fields.
+func (i *GetUrfsMetadataInput) Validate() error {
+
+	if i.Endpoint == "" {
+		return errors.New("invalid Endpoint")
+
+	}
+
+	if i.BucketName == "" {
+		return errors.New("invalid BucketName")
+
+	}
+
+	if i.ObjectKey == "" {
+		return errors.New("invalid ObjectKey")
+	}
+
+	return nil
+}
+
+// GetObjectMetadataRequestWithContext returns *http.Request of getting object metadata.
+func (dfs *dfstore) GetUrfsMetadataRequestWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*http.Request, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
+	dstUrl := url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%d", input.DstPeer, config.DefaultObjectStorageStartPort),
+	}
+
+	u, err := url.Parse(dstUrl.String())
+	if err != nil {
+		return nil, err
+	}
+
+	u.Path = path.Join("buckets", input.BucketName+"."+input.Endpoint, "objects", input.ObjectKey)
+	//println("u.path:", u.Path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// GetObjectMetadataWithContext returns metadata of object.
+func (dfs *dfstore) GetUrfsMetadataWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*pkgobjectstorage.ObjectMetadata, error) {
+	req, err := dfs.GetUrfsMetadataRequestWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := dfs.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("bad response status %s", resp.Status)
+	}
+
+	contentLength, err := strconv.ParseInt(resp.Header.Get(headers.ContentLength), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pkgobjectstorage.ObjectMetadata{
+		ContentDisposition: resp.Header.Get(headers.ContentDisposition),
+		ContentEncoding:    resp.Header.Get(headers.ContentEncoding),
+		ContentLanguage:    resp.Header.Get(headers.ContentLanguage),
+		ContentLength:      int64(contentLength),
+		ContentType:        resp.Header.Get(headers.ContentType),
+		ETag:               resp.Header.Get(headers.ContentType),
+		Digest:             resp.Header.Get(config.HeaderDragonflyObjectMetaDigest),
+	}, nil
+}
+
+// GetUrfsInput is used to construct request of getting object.
+type GetUrfsInput struct {
+
+	// Endpoint is endpoint name.
+	Endpoint string
+
+	// BucketName is bucket name.
+	BucketName string
+
+	// ObjectKey is object key.
+	ObjectKey string
+
+	// Filter is used to generate a unique Task ID by
+	// filtering unnecessary query params in the URL,
+	// it is separated by & character.
+	Filter string
+
+	// Range is the HTTP range header.
+	Range string
+
+	// DstPeer is target peerHost.
+	DstPeer string
+}
+
+// Validate validates GetUrfsInput fields.
+func (i *GetUrfsInput) Validate() error {
+
+	if i.Endpoint == "" {
+		return errors.New("invalid Endpoint")
+
+	}
+
+	if i.BucketName == "" {
+		return errors.New("invalid BucketName")
+
+	}
+
+	if i.ObjectKey == "" {
+		return errors.New("invalid ObjectKey")
+	}
+
+	return nil
+}
+
 // Validate validates GetObjectMetadataInput fields.
 func (i *GetObjectMetadataInput) Validate() error {
 	if i.BucketName == "" {
@@ -124,7 +282,7 @@ func (i *GetObjectMetadataInput) Validate() error {
 }
 
 // GetObjectMetadataRequestWithContext returns *http.Request of getting object metadata.
-func (dfs *dfstore) GetObjectMetadataRequestWithContext(ctx context.Context, input *GetObjectMetadataInput) (*http.Request, error) {
+func (dfs *dfstore) GetObjectMetadataRequestWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*http.Request, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -134,7 +292,8 @@ func (dfs *dfstore) GetObjectMetadataRequestWithContext(ctx context.Context, inp
 		return nil, err
 	}
 
-	u.Path = filepath.Join("buckets", input.BucketName, "objects", input.ObjectKey)
+	u.Path = filepath.Join("buckets", input.BucketName+"."+input.Endpoint, "objects", input.ObjectKey)
+	//println("u.path", u.Path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
 	if err != nil {
 		return nil, err
@@ -144,7 +303,7 @@ func (dfs *dfstore) GetObjectMetadataRequestWithContext(ctx context.Context, inp
 }
 
 // GetObjectMetadataWithContext returns metadata of object.
-func (dfs *dfstore) GetObjectMetadataWithContext(ctx context.Context, input *GetObjectMetadataInput) (*pkgobjectstorage.ObjectMetadata, error) {
+func (dfs *dfstore) GetObjectMetadataWithContext(ctx context.Context, input *GetUrfsMetadataInput) (*pkgobjectstorage.ObjectMetadata, error) {
 	req, err := dfs.GetObjectMetadataRequestWithContext(ctx, input)
 	if err != nil {
 		return nil, err
@@ -208,7 +367,7 @@ func (i *GetObjectInput) Validate() error {
 }
 
 // GetObjectRequestWithContext returns *http.Request of getting object.
-func (dfs *dfstore) GetObjectRequestWithContext(ctx context.Context, input *GetObjectInput) (*http.Request, error) {
+func (dfs *dfstore) GetObjectRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -218,7 +377,7 @@ func (dfs *dfstore) GetObjectRequestWithContext(ctx context.Context, input *GetO
 		return nil, err
 	}
 
-	u.Path = filepath.Join("buckets", input.BucketName, "objects", input.ObjectKey)
+	u.Path = filepath.Join("buckets", input.BucketName+"."+input.Endpoint, "objects", input.ObjectKey)
 
 	query := u.Query()
 	if input.Filter != "" {
@@ -239,7 +398,7 @@ func (dfs *dfstore) GetObjectRequestWithContext(ctx context.Context, input *GetO
 }
 
 // GetObjectWithContext returns data of object.
-func (dfs *dfstore) GetObjectWithContext(ctx context.Context, input *GetObjectInput) (io.ReadCloser, error) {
+func (dfs *dfstore) GetObjectWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error) {
 	req, err := dfs.GetObjectRequestWithContext(ctx, input)
 	if err != nil {
 		return nil, err
@@ -497,4 +656,112 @@ func (dfs *dfstore) IsObjectExistWithContext(ctx context.Context, input *IsObjec
 	}
 
 	return true, nil
+}
+
+// GetUrfsWithContext returns data of object.
+func (dfs *dfstore) GetUrfsWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error) {
+	req, err := dfs.GetUrfsRequestWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := dfs.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("bad response status %s", resp.Status)
+	}
+
+	return resp.Body, nil
+}
+
+// GetObjectRequestWithContext returns *http.Request of getting object.
+func (dfs *dfstore) GetUrfsRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
+	dstUrl := url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%d", input.DstPeer, config.DefaultObjectStorageStartPort),
+	}
+
+	u, err := url.Parse(dstUrl.String())
+	if err != nil {
+		return nil, err
+	}
+
+	u.Path = path.Join("buckets", input.BucketName+"."+input.Endpoint, "cache_object", input.ObjectKey)
+
+	query := u.Query()
+	if input.Filter != "" {
+		query.Set("filter", input.Filter)
+	}
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Range != "" {
+		req.Header.Set(headers.Range, input.Range)
+	}
+
+	return req, nil
+}
+
+// GetUrfsStatusWithContext returns schedule task status.
+func (dfs *dfstore) GetUrfsStatusWithContext(ctx context.Context, input *GetUrfsInput) (io.ReadCloser, error) {
+	req, err := dfs.GetUrfsStatusRequestWithContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := dfs.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("bad response status %s", resp.Status)
+	}
+
+	return resp.Body, nil
+}
+
+// GetObjectStatusRequestWithContext returns *http.Request of check schedule task status.
+func (dfs *dfstore) GetUrfsStatusRequestWithContext(ctx context.Context, input *GetUrfsInput) (*http.Request, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
+	dstUrl := url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%d", input.DstPeer, config.DefaultObjectStorageStartPort),
+	}
+
+	u, err := url.Parse(dstUrl.String())
+	if err != nil {
+		return nil, err
+	}
+
+	u.Path = path.Join("buckets", input.BucketName+"."+input.Endpoint, "check_object", input.ObjectKey)
+
+	query := u.Query()
+	if input.Filter != "" {
+		query.Set("filter", input.Filter)
+	}
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Range != "" {
+		req.Header.Set(headers.Range, input.Range)
+	}
+
+	return req, nil
 }

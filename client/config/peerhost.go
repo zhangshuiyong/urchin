@@ -69,11 +69,126 @@ type DaemonOption struct {
 	Proxy         *ProxyOption         `mapstructure:"proxy" yaml:"proxy"`
 	Upload        UploadOption         `mapstructure:"upload" yaml:"upload"`
 	ObjectStorage ObjectStorageOption  `mapstructure:"objectStorage" yaml:"objectStorage"`
+	SourceObs     ObjectStorageService    `mapstructure:"sourceObs" yaml:"sourceObs"`
+	BackendPool   []*ObjectStorageService `mapstructure:"backendPool" yaml:"backendPool"`
 	Storage       StorageOption        `mapstructure:"storage" yaml:"storage"`
 	Health        *HealthOption        `mapstructure:"health" yaml:"health"`
 	Reload        ReloadOption         `mapstructure:"reload" yaml:"reload"`
 	Network       *NetworkOption       `mapstructure:"network" yaml:"network"`
 	Announcer     AnnouncerOption      `mapstructure:"announcer" yaml:"announcer"`
+
+	// Database configuration.
+	Database DatabaseConfig `yaml:"database" mapstructure:"database"`
+}
+
+type DatabaseConfig struct {
+	// Database type.
+	Type string `yaml:"type" mapstructure:"type"`
+
+	// Mysql configuration.
+	Mysql MysqlConfig `yaml:"mysql" mapstructure:"mysql"`
+
+	// Postgres configuration.
+	Postgres PostgresConfig `yaml:"postgres" mapstructure:"postgres"`
+
+	// Redis configuration.
+	Redis RedisConfig `yaml:"redis" mapstructure:"redis"`
+}
+
+type RedisConfig struct {
+	// DEPRECATED: Please use the `addrs` field instead.
+	Host string `yaml:"host" mapstructure:"host"`
+
+	// DEPRECATED: Please use the `addrs` field instead.
+	Port int `yaml:"port" mapstructure:"port"`
+
+	// Addrs is server addresses.
+	Addrs []string `yaml:"addrs" mapstructure:"addrs"`
+
+	// MasterName is the sentinel master name.
+	MasterName string `yaml:"masterName" mapstructure:"masterName"`
+
+	// Username is server username.
+	Username string `yaml:"username" mapstructure:"username"`
+
+	// Password is server password.
+	Password string `yaml:"password" mapstructure:"password"`
+
+	// DB is server cache DB name.
+	DB int `yaml:"db" mapstructure:"db"`
+
+	// BrokerDB is server broker DB name.
+	BrokerDB int `yaml:"brokerDB" mapstructure:"brokerDB"`
+
+	// BackendDB is server backend DB name.
+	BackendDB int `yaml:"backendDB" mapstructure:"backendDB"`
+}
+
+type MysqlTLSConfig struct {
+	// Client certificate file path.
+	Cert string `yaml:"cert" mapstructure:"cert"`
+
+	// Client key file path.
+	Key string `yaml:"key" mapstructure:"key"`
+
+	// CA file path.
+	CA string `yaml:"ca" mapstructure:"ca"`
+
+	// InsecureSkipVerify controls whether a client verifies the
+	// server's certificate chain and host name.
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify" mapstructure:"insecureSkipVerify"`
+}
+
+type MysqlConfig struct {
+	// Server username.
+	User string `yaml:"user" mapstructure:"user"`
+
+	// Server password.
+	Password string `yaml:"password" mapstructure:"password"`
+
+	// Server host.
+	Host string `yaml:"host" mapstructure:"host"`
+
+	// Server port.
+	Port int `yaml:"port" mapstructure:"port"`
+
+	// Server DB name.
+	DBName string `yaml:"dbname" mapstructure:"dbname"`
+
+	// TLS mode (can be one of "true", "false", "skip-verify",  or "preferred").
+	TLSConfig string `yaml:"tlsConfig" mapstructure:"tlsConfig"`
+
+	// Custom TLS configuration (overrides "TLSConfig" setting above).
+	TLS *MysqlTLSConfig `yaml:"tls" mapstructure:"tls"`
+
+	// Enable migration.
+	Migrate bool `yaml:"migrate" mapstructure:"migrate"`
+}
+
+type PostgresConfig struct {
+	// Server username.
+	User string `yaml:"user" mapstructure:"user"`
+
+	// Server password.
+	Password string `yaml:"password" mapstructure:"password"`
+
+	// Server host.
+	Host string `yaml:"host" mapstructure:"host"`
+
+	// Server port.
+	Port int `yaml:"port" mapstructure:"port"`
+
+	// Server DB name.
+	DBName string `yaml:"dbname" mapstructure:"dbname"`
+
+	// SSL mode.
+	SSLMode string `yaml:"sslMode" mapstructure:"sslMode"`
+
+	// Server timezone.
+	Timezone string `yaml:"timezone" mapstructure:"timezone"`
+
+	// Enable migration.
+	Migrate bool `yaml:"migrate" mapstructure:"migrate"`
 }
 
 func NewDaemonConfig() *DaemonOption {
@@ -495,7 +610,15 @@ type UploadOption struct {
 
 type ObjectStorageOption struct {
 	// Enable object storage.
-	Enable bool `mapstructure:"enable" yaml:"enable"`
+	Enable          bool                   `mapstructure:"enable" yaml:"enable"`
+	Name            string                 `mapstructure:"name" yaml:"name"`
+	Region          string                 `mapstructure:"region" yaml:"region"`
+	Endpoint        string                 `mapstructure:"endpoint" yaml:"endpoint"`
+	AccessKey       string                 `mapstructure:"accessKey" yaml:"accessKey"`
+	SecretKey       string                 `mapstructure:"secretKey" yaml:"secretKey"`
+	CacheBucket     string                 `yaml:"cacheBucket" mapstructure:"cacheBucket"`
+	Buckets         []*ObjectStorageBucket `yaml:"buckets" mapstructure:"buckets"`
+	RetryTimeOutSec int64                  `yaml:"retryTimeOutSec" mapstructure:"retryTimeOutSec"`
 	// Filter is used to generate a unique Task ID by
 	// filtering unnecessary query params in the URL,
 	// it is separated by & character.
@@ -504,6 +627,23 @@ type ObjectStorageOption struct {
 	MaxReplicas int `mapstructure:"maxReplicas" yaml:"maxReplicas"`
 	// ListenOption is object storage service listener.
 	ListenOption `yaml:",inline" mapstructure:",squash"`
+}
+
+type ObjectStorageBucket struct {
+	Enable bool `yaml:"enable" mapstructure:"enable"`
+
+	// Redirect is the host to redirect to, if not empty
+	Name string `yaml:"name" mapstructure:"name"`
+}
+
+type ObjectStorageService struct {
+	Name        string                 `mapstructure:"name" yaml:"name"`
+	Region      string                 `mapstructure:"region" yaml:"region"`
+	Endpoint    string                 `mapstructure:"endpoint" yaml:"endpoint"`
+	AccessKey   string                 `mapstructure:"accessKey" yaml:"accessKey"`
+	SecretKey   string                 `mapstructure:"secretKey" yaml:"secretKey"`
+	CacheBucket string                 `yaml:"cacheBucket" mapstructure:"cacheBucket"`
+	Buckets     []*ObjectStorageBucket `yaml:"buckets" mapstructure:"buckets"`
 }
 
 type ListenOption struct {

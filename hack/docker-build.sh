@@ -7,13 +7,13 @@ set -o pipefail
 curDir=$(cd "$(dirname "$0")" && pwd)
 cd "${curDir}/../" || return
 
-D7Y_VERSION=${D7Y_VERSION:-"latest"}
-D7Y_REGISTRY=${D7Y_REGISTRY:-d7yio}
+UR_VERSION=${UR_VERSION:-"latest"}
+UR_REGISTRY=${UR_REGISTRY:-openi}
 IMAGES_DIR="build/images"
-BASE_IMAGE=${BASE_IMAGE:-alpine:3.16}
+BASE_IMAGE=${BASE_IMAGE:-debian:bullseye}
 
 CGO_ENABLED=${CGO_ENABLED:-0}
-GOPROXY=${GOPROXY:-`go env GOPROXY`}
+GOPROXY=${GOPROXY:-`go env -w GOPROXY=https://goproxy.cn,direct`}
 GOTAGS=${GOTAGS:-}
 GOGCFLAGS=${GOGCFLAGS:-}
 
@@ -36,7 +36,7 @@ docker-build() {
       --build-arg GOTAGS="${GOTAGS}" \
       --build-arg GOGCFLAGS="${GOGCFLAGS}" \
       --build-arg BASE_IMAGE="${BASE_IMAGE}" \
-      -t "${D7Y_REGISTRY}/${name}:${D7Y_VERSION}" \
+      -t "${UR_REGISTRY}/${name}:${UR_VERSION}" \
       -f "${IMAGES_DIR}/${name}/Dockerfile" .
 }
 
@@ -46,6 +46,9 @@ git-submodule() {
 
 main() {
     case "${1-}" in
+    urchin-peerdaemon)
+        docker-build urchin-peerdaemon
+        ;;
     dfdaemon)
         docker-build dfdaemon
         ;;

@@ -43,7 +43,11 @@ docker-push: docker-push-dfdaemon docker-push-scheduler docker-push-manager
 	@echo "Push image done."
 .PHONY: docker-push
 
-# Build dfdaemon image.
+# Build dfdaemon image
+docker-build-urchin-peerdaemon:
+	@echo "Begin to use docker build urchin-peerdaemon image."
+	./hack/docker-build.sh urchin-peerdaemon
+.PHONY: docker-build-urchin-peerdaemon
 docker-build-dfdaemon:
 	@echo "Begin to use docker build dfdaemon image."
 	./hack/docker-build.sh dfdaemon
@@ -409,6 +413,7 @@ help:
 	@echo "make build-dirs                     prepare required folders for build"
 	@echo "make docker-build                   build dragonfly image"
 	@echo "make docker-push                    push dragonfly image"
+	@echo "make docker-build-urchin-peerdaemon build urchin peerdaemon image"
 	@echo "make docker-build-dfdaemon          build dfdaemon image"
 	@echo "make docker-build-scheduler         build scheduler image"
 	@echo "make docker-build-manager           build manager image"

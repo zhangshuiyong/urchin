@@ -31,4 +31,6 @@ const (
 	HeaderDragonflyRegistry = "X-Dragonfly-Registry"
 	// HeaderDragonflyObjectMetaDigest is used for digest of object storage.
 	HeaderDragonflyObjectMetaDigest = "X-Dragonfly-Object-Meta-Digest"
+	// HeaderUrchinObjectMetaDigest
+	HeaderUrchinObjectMetaDigest = "X-Urchin-Object-Meta-Digest"
 )

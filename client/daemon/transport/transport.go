@@ -284,7 +284,7 @@ func (rt *transport) download(ctx context.Context, req *http.Request) (*http.Res
 	meta.Application = application
 	meta.Priority = priority
 
-	body, attr, err := rt.peerTaskManager.StartStreamTask(
+	body, attr, _, _, err := rt.peerTaskManager.StartStreamTask(
 		ctx,
 		&peer.StreamTaskRequest{
 			URL:     url,

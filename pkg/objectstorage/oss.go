@@ -142,6 +142,10 @@ func (o *oss) PutObject(ctx context.Context, bucketName, objectKey, digest strin
 	return bucket.PutObject(objectKey, reader, meta)
 }
 
+func (o *oss) PutObjectWithTotalLength(ctx context.Context, bucketName, objectKey, digest string, totalLength int64, reader io.Reader) error {
+	return nil
+}
+
 // DeleteObject deletes data of object.
 func (o *oss) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	bucket, err := o.client.Bucket(bucketName)
@@ -150,6 +154,11 @@ func (o *oss) DeleteObject(ctx context.Context, bucketName, objectKey string) er
 	}
 
 	return bucket.DeleteObject(objectKey)
+}
+
+// DeleteObjects deletes data of objects.
+func (o *oss) DeleteObjects(ctx context.Context, bucketName string, objects []*ObjectMetadata) error {
+	return nil
 }
 
 // ListObjectMetadatas returns metadata of objects.
@@ -173,6 +182,11 @@ func (o *oss) ListObjectMetadatas(ctx context.Context, bucketName, prefix, marke
 	}
 
 	return metadatas, nil
+}
+
+// ListFolderObjects returns all objects of folder.
+func (o *oss) ListFolderObjects(ctx context.Context, bucketName, prefix string) ([]*ObjectMetadata, error) {
+	return nil, nil
 }
 
 // IsObjectExist returns whether the object exists.
@@ -216,4 +230,14 @@ func (o *oss) GetSignURL(ctx context.Context, bucketName, objectKey string, meth
 	}
 
 	return bucket.SignURL(objectKey, ossHTTPMethod, int64(expire.Seconds()))
+}
+
+// CreateFolder creates folder of object storage.
+func (o *oss) CreateFolder(ctx context.Context, bucketName, folderName string, isEmptyFolder bool) error {
+	return nil
+}
+
+// GetFolderMetadata returns metadata of folder.
+func (o *oss) GetFolderMetadata(ctx context.Context, bucketName, folderKey string) (*ObjectMetadata, bool, error) {
+	return nil, true, nil
 }

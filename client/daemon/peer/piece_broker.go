@@ -28,6 +28,7 @@ type PieceInfo struct {
 	Num int32
 	// OrderedNum is the max pieces num with ordered, eg: 0 1 2 3 5 7 8, the OrderedNum is 3
 	OrderedNum int32
+	RangeSize  uint32
 	Finished   bool
 }
 

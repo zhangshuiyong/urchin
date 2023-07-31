@@ -87,8 +87,14 @@ type ObjectStorage interface {
 	// PutObject puts data of object.
 	PutObject(ctx context.Context, bucketName, objectKey, digest string, reader io.Reader) error
 
+	// PutObjectWithTotalLength puts data of object.
+	PutObjectWithTotalLength(ctx context.Context, bucketName, objectKey, digest string, totalLength int64, reader io.Reader) error
+
 	// DeleteObject deletes data of object.
 	DeleteObject(ctx context.Context, bucketName, objectKey string) error
+
+	// DeleteObjects deletes data of objects.
+	DeleteObjects(ctx context.Context, bucketName string, objects []*ObjectMetadata) error
 
 	// ListObjectMetadatas returns metadata of objects.
 	ListObjectMetadatas(ctx context.Context, bucketName, prefix, marker string, limit int64) ([]*ObjectMetadata, error)
@@ -98,6 +104,15 @@ type ObjectStorage interface {
 
 	// GetSignURL returns sign url of object.
 	GetSignURL(ctx context.Context, bucketName, objectKey string, method Method, expire time.Duration) (string, error)
+
+	// CreateFolder creates folder of object storage.
+	CreateFolder(ctx context.Context, bucketName, folderName string, isEmptyFolder bool) error
+
+	// ListFolderObjects returns all objects of folder.
+	ListFolderObjects(ctx context.Context, bucketName, prefix string) ([]*ObjectMetadata, error)
+
+	// GetFolderMetadata returns metadata of folder.
+	GetFolderMetadata(ctx context.Context, bucketName, folderKey string) (*ObjectMetadata, bool, error)
 }
 
 // objectStorage provides object storage.
@@ -153,6 +168,12 @@ func New(name, region, endpoint, accessKey, secretKey string, options ...Option)
 		return newOSS(o.region, o.endpoint, o.accessKey, o.secretKey)
 	case ServiceNameOBS:
 		return newOBS(o.region, o.endpoint, o.accessKey, o.secretKey)
+	case ServiceNameSUGON:
+		return newSugon(o.region, o.endpoint, o.accessKey, o.secretKey)
+	case ServiceNameSTARLIGHT:
+		return newStarlight(o.region, o.endpoint, o.accessKey, o.secretKey)
+	case ServiceNameMINIO:
+		return newMinio(o.region, o.endpoint, o.accessKey, o.secretKey)
 	}
 
 	return nil, fmt.Errorf("unknow service name %s", name)

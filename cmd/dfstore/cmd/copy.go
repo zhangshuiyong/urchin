@@ -113,7 +113,7 @@ func validateCopyArgs(args []string) error {
 }
 
 // Copy object storage to local file.
-func copyObjectStorageToLocalFile(ctx context.Context, cfg *config.DfstoreConfig, bucketName, objectKey, filepath string) error {
+func copyObjectStorageToLocalFile(ctx context.Context, cfg *config.DfstoreConfig, endpoint, bucketName, objectKey, filepath string) error {
 	start := time.Now()
 	dfs := dfstore.New(cfg.Endpoint)
 	meta, err := dfs.GetObjectMetadataWithContext(ctx, &dfstore.GetObjectMetadataInput{
@@ -142,7 +142,8 @@ func copyObjectStorageToLocalFile(ctx context.Context, cfg *config.DfstoreConfig
 		}),
 	)
 
-	reader, err := dfs.GetObjectWithContext(ctx, &dfstore.GetObjectInput{
+	reader, err := dfs.GetObjectWithContext(ctx, &dfstore.GetUrfsInput{
+		Endpoint:   endpoint,
 		BucketName: bucketName,
 		ObjectKey:  objectKey,
 	})

@@ -150,9 +150,28 @@ func (o *obs) PutObject(ctx context.Context, bucketName, objectKey, digest strin
 	return err
 }
 
+func (o *obs) PutObjectWithTotalLength(ctx context.Context, bucketName, objectKey, digest string, totalLength int64, reader io.Reader) error {
+	return nil
+}
+
 // DeleteObject deletes data of object.
 func (o *obs) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	_, err := o.client.DeleteObject(&huaweiobs.DeleteObjectInput{Bucket: bucketName, Key: objectKey})
+	return err
+}
+
+// DeleteObjects deletes data of objects.
+func (o *obs) DeleteObjects(ctx context.Context, bucketName string, objects []*ObjectMetadata) error {
+	input := &huaweiobs.DeleteObjectsInput{}
+	input.Bucket = bucketName
+
+	var objectsToDel []huaweiobs.ObjectToDelete
+	for _, obj := range objects {
+		objectsToDel = append(objectsToDel, huaweiobs.ObjectToDelete{Key: obj.Key})
+	}
+	input.Objects = objectsToDel[:]
+
+	_, err := o.client.DeleteObjects(input)
 	return err
 }
 
@@ -173,12 +192,43 @@ func (o *obs) ListObjectMetadatas(ctx context.Context, bucketName, prefix, marke
 	var metadatas []*ObjectMetadata
 	for _, object := range resp.Contents {
 		metadatas = append(metadatas, &ObjectMetadata{
-			Key:  object.Key,
-			ETag: object.ETag,
+			Key:           object.Key,
+			ETag:          object.ETag,
+			ContentLength: object.Size,
 		})
 	}
 
 	return metadatas, nil
+}
+
+// ListFolderObjects returns all objects of folder.
+func (o *obs) ListFolderObjects(ctx context.Context, bucketName, prefix string) ([]*ObjectMetadata, error) {
+	var metadatas []*ObjectMetadata
+	input := &huaweiobs.ListObjectsInput{}
+	input.Bucket = bucketName
+	input.ListObjsInput.Prefix = prefix
+	input.Marker = ""
+	input.ListObjsInput.MaxKeys = 100
+
+	for {
+		resp, err := o.client.ListObjects(input)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, object := range resp.Contents {
+			metadatas = append(metadatas, &ObjectMetadata{
+				Key:           object.Key,
+				ETag:          object.ETag,
+				ContentLength: object.Size,
+			})
+		}
+
+		if resp.NextMarker == "" {
+			return metadatas, nil
+		}
+		input.Marker = resp.NextMarker
+	}
 }
 
 // IsObjectExist returns whether the object exists.
@@ -215,13 +265,79 @@ func (o *obs) GetSignURL(ctx context.Context, bucketName, objectKey string, meth
 	}
 
 	resp, err := o.client.CreateSignedUrl(&huaweiobs.CreateSignedUrlInput{
-		Bucket: bucketName,
-		Key:    objectKey,
-		Method: obsHTTPMethod,
+		Bucket:  bucketName,
+		Key:     objectKey,
+		Method:  obsHTTPMethod,
+		Expires: int(expire.Seconds()),
 	})
 	if err != nil {
 		return "", err
 	}
 
 	return resp.SignedUrl, nil
+}
+
+// CreateFolder creates folder of object storage.
+func (o *obs) CreateFolder(ctx context.Context, bucketName, folderName string, isEmptyFolder bool) error {
+	if !strings.HasSuffix(folderName, "/") {
+		folderName += "/"
+	}
+
+	_, err := o.client.PutObject(&huaweiobs.PutObjectInput{
+		PutObjectBasicInput: huaweiobs.PutObjectBasicInput{
+			ObjectOperationInput: huaweiobs.ObjectOperationInput{
+				Bucket: bucketName,
+				Key:    folderName,
+			},
+		},
+	})
+
+	return err
+}
+
+// GetFolderMetadata returns metadata of folder.
+func (o *obs) GetFolderMetadata(ctx context.Context, bucketName, folderKey string) (*ObjectMetadata, bool, error) {
+	if !strings.HasSuffix(folderKey, "/") {
+		folderKey += "/"
+	}
+
+	metadata, err := o.client.GetObjectMetadata(&huaweiobs.GetObjectMetadataInput{Bucket: bucketName, Key: folderKey})
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			//objs, err := o.ListObjectMetadatas(ctx, bucketName, folderKey, "", 1)
+			//if err != nil {
+			//	return nil, false, err
+			//} else if len(objs) >= 1 {
+			//	return &ObjectMetadata{
+			//		Key: folderKey,
+			//	}, true, nil
+			//} else {
+			//	return nil, false, nil
+			//}
+			return nil, false, nil
+		}
+
+		return nil, false, err
+	}
+
+	object, err := o.client.GetObject(&huaweiobs.GetObjectInput{
+		GetObjectMetadataInput: huaweiobs.GetObjectMetadataInput{
+			Bucket: bucketName,
+			Key:    folderKey,
+		},
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &ObjectMetadata{
+		Key:                folderKey,
+		ContentDisposition: object.ContentDisposition,
+		ContentEncoding:    object.ContentEncoding,
+		ContentLanguage:    object.ContentLanguage,
+		ContentLength:      metadata.ContentLength,
+		ContentType:        metadata.ContentType,
+		ETag:               metadata.ETag,
+		Digest:             metadata.Metadata[MetaDigest],
+	}, true, nil
 }
