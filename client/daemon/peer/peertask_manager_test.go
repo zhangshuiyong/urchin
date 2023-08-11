@@ -737,7 +737,7 @@ func (ts *testSpec) runFileTaskTest(assert *testifyassert.Assertions, require *t
 }
 
 func (ts *testSpec) runStreamTaskTest(_ *testifyassert.Assertions, require *testifyrequire.Assertions, mm *mockManager, urlMeta *commonv1.UrlMeta) {
-	r, _, err := mm.peerTaskManager.StartStreamTask(
+	r, _, _, _, err := mm.peerTaskManager.StartStreamTask(
 		context.Background(),
 		&StreamTaskRequest{
 			URL:     ts.url,

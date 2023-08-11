@@ -5,20 +5,25 @@ import (
 	"context"
 	commonv1 "d7y.io/api/pkg/apis/common/v1"
 	"d7y.io/dragonfly/v2/client/config"
+
 	"d7y.io/dragonfly/v2/client/daemon/peer"
 	"d7y.io/dragonfly/v2/client/daemon/storage"
 	urchinstatus "d7y.io/dragonfly/v2/client/daemon/urchin_status"
+	urchintask "d7y.io/dragonfly/v2/client/daemon/urchin_task"
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"d7y.io/dragonfly/v2/pkg/dfpath"
 	"d7y.io/dragonfly/v2/pkg/digest"
 	"d7y.io/dragonfly/v2/pkg/idgen"
+	nethttp "d7y.io/dragonfly/v2/pkg/net/http"
 	"d7y.io/dragonfly/v2/pkg/objectstorage"
+	"d7y.io/dragonfly/v2/pkg/retry"
 	pkgstrings "d7y.io/dragonfly/v2/pkg/strings"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/go-http-utils/headers"
 	"github.com/opentracing/opentracing-go/log"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -28,6 +33,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,23 +72,30 @@ const (
 )
 
 type UrchinFileManager struct {
-	config          *config.DaemonOption
-	dynconfig       config.Dynconfig
-	peerTaskManager peer.TaskManager
-	storageManager  storage.Manager
-	peerIDGenerator peer.IDGenerator
+	config            *config.DaemonOption
+	dynconfig         config.Dynconfig
+	peerTaskManager   peer.TaskManager
+	storageManager    storage.Manager
+	peerIDGenerator   peer.IDGenerator
+	urchinTaskManager *urchintask.UrchinTaskManager
+	cachingTasks      sync.Map
+	cachingTaskLock   sync.Locker
 }
 
 func NewUrchinFileManager(config *config.DaemonOption, dynconfig config.Dynconfig,
 	peerTaskManager peer.TaskManager, storageManager storage.Manager,
-	peerIDGenerator peer.IDGenerator) *UrchinFileManager {
+	peerIDGenerator peer.IDGenerator,
+	urchinTaskManager *urchintask.UrchinTaskManager) (*UrchinFileManager, error) {
 	return &UrchinFileManager{
-		config,
-		dynconfig,
-		peerTaskManager,
-		storageManager,
-		peerIDGenerator,
-	}
+		config:            config,
+		dynconfig:         dynconfig,
+		peerTaskManager:   peerTaskManager,
+		storageManager:    storageManager,
+		peerIDGenerator:   peerIDGenerator,
+		urchinTaskManager: urchinTaskManager,
+		cachingTasks:      sync.Map{},
+		cachingTaskLock:   &sync.Mutex{},
+	}, nil
 }
 
 func (urfm *UrchinFileManager) genMetaFileName(versionId string, versionDigest string) string {
@@ -530,7 +543,7 @@ func (urfm *UrchinFileManager) validateLocalBlobFile(localFileSize uint64, expec
 	return localFileSize == expectFileSize
 }
 
-//deleteLocalBlobFile to save local disk space
+// deleteLocalBlobFile to save local disk space
 func (urfm *UrchinFileManager) deleteLocalBlobFile(datasetId string, versionId string, versionDigest *digest.Digest) error {
 	tryLocalBlobFilePath := urfm.genLocalBlobFilePath(datasetId, versionId, versionDigest.String())
 
@@ -558,13 +571,13 @@ func (urfm *UrchinFileManager) checkLocalChunkFile(statParams StatFileParams) (b
 	}
 }
 
-//ToDo: validate chunk file blob file digest
+// ToDo: validate chunk file blob file digest
 func (urfm *UrchinFileManager) validateLocalChunkFile(localFileSize uint64, statParams StatFileParams) bool {
 	chunkEnd := statParams.ChunkStart + statParams.ChunkSize
 	return localFileSize == statParams.ChunkSize && chunkEnd >= 0 && chunkEnd <= statParams.TotalSize
 }
 
-//deleteLocalChunks to save local disk space
+// deleteLocalChunks to save local disk space
 func (urfm *UrchinFileManager) deleteLocalChunks(datasetId string, versionId string, versionDigest *digest.Digest) error {
 	localChunksParentDir := urfm.genLocalChunksParentDir(datasetId, versionId, versionDigest.String())
 	_, err := os.Stat(localChunksParentDir)
@@ -963,4 +976,564 @@ func (urfm *UrchinFileManager) client() (objectstorage.ObjectStorage, error) {
 	}
 
 	return client, nil
+}
+
+func (urfm *UrchinFileManager) CacheObject(ctx *gin.Context) {
+	var params objectstorage.ObjectParams
+	if err := ctx.ShouldBindUri(&params); err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
+		return
+	}
+
+	var query objectstorage.GetObjectQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
+		return
+	}
+
+	bucketEndpoint := strings.SplitN(params.ID, ".", 2)
+
+	if len(bucketEndpoint) < 2 {
+		logger.Errorf("sourceBucket %s is invalid", bucketEndpoint)
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": http.StatusText(http.StatusNotFound)})
+		return
+	}
+
+	var (
+		sourceEndpoint = bucketEndpoint[1]
+		bucketName     = bucketEndpoint[0]
+		objectKey      = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
+		filter         = query.Filter
+		rg             *nethttp.Range
+		err            error
+	)
+
+	//1. Check Endpoint
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
+	if !isInControl {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": "DataSource Not In BackendPool:" + http.StatusText(http.StatusForbidden)})
+		return
+	}
+	//2. Check Target Bucket
+	if !objectstorage.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": "please check datasource bucket & cache bucket is in control & exist in config"})
+		return
+	}
+
+	// Initialize filter field.
+	urlMeta := &commonv1.UrlMeta{Filter: urfm.config.ObjectStorage.Filter}
+	if filter != "" {
+		urlMeta.Filter = filter
+	}
+
+	//3. Check Current Peer CacheBucket is existed datasource Object
+	dstClient, err := objectstorage.Client(urfm.config.ObjectStorage.Name,
+		urfm.config.ObjectStorage.Region,
+		urfm.config.ObjectStorage.Endpoint,
+		urfm.config.ObjectStorage.AccessKey,
+		urfm.config.ObjectStorage.SecretKey)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	anyRes, _, err := retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, time.Duration(urfm.config.ObjectStorage.RetryTimeOutSec)*time.Second)
+		defer cancel()
+
+		meta, isExist, err := dstClient.GetObjectMetadata(ctxSub, urfm.config.ObjectStorage.CacheBucket, objectKey)
+		if isExist && err == nil {
+			//exist, skip retry
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
+		} else {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
+		}
+	})
+
+	if err != nil {
+		logger.Errorf("Endpoint %s CacheBucket %s get meta error:%s", urfm.config.ObjectStorage.Endpoint, urfm.config.ObjectStorage.CacheBucket, err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	dataRootName := urfm.config.ObjectStorage.CacheBucket
+	if urfm.config.ObjectStorage.Name == "sugon" || urfm.config.ObjectStorage.Name == "starlight" {
+		dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
+	}
+
+	res := anyRes.(objectstorage.RetryRes)
+	if res.IsExist {
+		meta := res.Res
+		ctx.JSON(http.StatusOK, gin.H{
+			headers.ContentType:                 meta.ContentType,
+			headers.ContentLength:               fmt.Sprint(meta.ContentLength),
+			config.HeaderUrchinObjectMetaDigest: meta.Digest,
+			"StatusCode":                        0,
+			"StatusMsg":                         "Succeed",
+			"TaskID":                            "",
+			"SignedUrl":                         "",
+			"DataRoot":                          dataRootName,
+			"DataPath":                          objectKey,
+			"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+		})
+
+		return
+	} else {
+		//4.Check Exist in DstDataCenter's Control Buckets
+		for _, bucket := range urfm.config.ObjectStorage.Buckets {
+			if bucket.Name != urfm.config.ObjectStorage.CacheBucket && bucket.Enable {
+
+				meta, isExist, err := dstClient.GetObjectMetadata(ctx, bucket.Name, objectKey)
+				dataRootName := bucket.Name
+				if urfm.config.ObjectStorage.Name == "sugon" || urfm.config.ObjectStorage.Name == "starlight" {
+					dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
+				}
+
+				if isExist {
+
+					ctx.JSON(http.StatusOK, gin.H{
+						headers.ContentType:                 meta.ContentType,
+						headers.ContentLength:               fmt.Sprint(meta.ContentLength),
+						config.HeaderUrchinObjectMetaDigest: meta.Digest,
+						"StatusCode":                        0,
+						"StatusMsg":                         "Succeed",
+						"TaskID":                            "",
+						"SignedUrl":                         "",
+						"DataRoot":                          dataRootName,
+						"DataPath":                          objectKey,
+						"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+					})
+
+					return
+				}
+
+				if err != nil {
+					logger.Errorf("Endpoint %s Control Bucket %s get meta error:%s", urfm.config.ObjectStorage.Endpoint, bucket.Name, err.Error())
+					ctx.JSON(http.StatusInternalServerError, gin.H{"errors": "Endpoint " + urfm.config.ObjectStorage.Endpoint + " Control Bucket " + bucket.Name + " get meta error:" + err.Error()})
+					return
+				}
+			}
+		}
+
+		logger.Infof("DstData Endpoint %s Control Buckets not exist object:%s", urfm.config.ObjectStorage.Endpoint, objectKey)
+	}
+
+	//DstDataSet Not Exist In DstDataCenter, Move it from DataSource to Dst DataCenter
+	//5. Check dataSource is existed this Object
+	sourceClient, err := objectstorage.Client(urfm.config.SourceObs.Name,
+		urfm.config.SourceObs.Region,
+		urfm.config.SourceObs.Endpoint,
+		urfm.config.SourceObs.AccessKey,
+		urfm.config.SourceObs.SecretKey)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	anyRes, _, err = retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		//ctxSub, cancel := context.WithTimeout(ctx, 3*time.Second)
+		//defer cancel()
+
+		meta, isExist, err := sourceClient.GetObjectMetadata(ctx, bucketName, objectKey)
+		if isExist && err == nil {
+			//exist, skip retry
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
+		} else {
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
+		}
+	})
+
+	if err != nil {
+		logger.Errorf("dataSource %s bucket %s object %s err %v ", urfm.config.SourceObs.Endpoint, bucketName, objectKey, err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+	res = anyRes.(objectstorage.RetryRes)
+	if !res.IsExist {
+		logger.Errorf("dataSource %s bucket %s object %s not found", urfm.config.SourceObs.Endpoint, bucketName, objectKey)
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": "dataSource:" + urfm.config.SourceObs.Endpoint + "." + bucketName + "/" + objectKey + " not found"})
+		return
+	}
+
+	meta := res.Res
+
+	urlMeta.Digest = meta.Digest
+
+	// Parse http range header.
+	rangeHeader := ctx.GetHeader(headers.Range)
+	if len(rangeHeader) > 0 {
+		rangeValue, err := nethttp.ParseOneRange(rangeHeader, math.MaxInt64)
+		if err != nil {
+			ctx.JSON(http.StatusRequestedRangeNotSatisfiable, gin.H{"errors": err.Error()})
+			return
+		}
+		rg = &rangeValue
+
+		// Range header in dragonfly is without "bytes=".
+		urlMeta.Range = strings.TrimLeft(rangeHeader, "bytes=")
+	}
+
+	signURL, err := sourceClient.GetSignURL(ctx, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
+
+	taskID := idgen.TaskIDV1(signURL, urlMeta)
+	log := logger.WithTaskID(taskID)
+
+	urfm.cachingTaskLock.Lock()
+	_, ok := urfm.cachingTasks.Load(taskID)
+
+	log.Infof("cacheObject object %s taskID %s isCaching:%v meta: %s %#v", objectKey, taskID, ok, signURL, urlMeta)
+
+	if !ok {
+		urfm.cachingTasks.Store(taskID, true)
+
+		go func() {
+
+			reader, _, _, _, err := urfm.peerTaskManager.StartStreamTask(ctx, &peer.StreamTaskRequest{
+				URL:     signURL,
+				URLMeta: urlMeta,
+				Range:   rg,
+				PeerID:  urfm.peerIDGenerator.PeerID(),
+			})
+
+			if err != nil {
+
+				logger.Errorf("StartStreamTask dstEndpoint %s object %s to sourceBucket %s taskID:%s err: %s and delete caching task", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID, err.Error())
+				urfm.deleteCacheTaskInMap(taskID)
+
+				return
+			}
+			defer reader.Close()
+
+			log.Infof("UrchinTaskManager CreateTask to db dstEndpoint %s object %s to sourceBucket %s taskID:%s", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID)
+
+			if err = urfm.urchinTaskManager.CreateTask(taskID, sourceEndpoint, urfm.config.ObjectStorage.Endpoint, uint64(meta.ContentLength), bucketName+":"+objectKey); err != nil {
+				log.Errorf("UrchinTaskManager CreateTask to db err: %s dstEndpoint %s object %s to sourceBucket %s taskID:%s", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID, err.Error())
+				urfm.deleteCacheTaskInMap(taskID)
+				return
+			}
+
+			log.Infof("pushToOwnBackend dstEndpoint %s object %s to sourceBucket %s", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName)
+
+			if err = objectstorage.PushToOwnBackend(context.Background(), urfm.config.ObjectStorage.Name, urfm.config.ObjectStorage.CacheBucket, objectKey, meta, reader, dstClient); err != nil {
+				log.Errorf("pushToOwnBackend dstEndpoint %s object %s to sourceBucket %s taskID:%s failed: %s and delete caching task", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID, err.Error())
+				urfm.deleteCacheTaskInMap(taskID)
+
+				return
+			}
+
+			log.Infof("pushToOwnBackend dstEndpoint %s object %s to sourceBucket %s taskID:%s finish and delete caching task", urfm.config.ObjectStorage.Endpoint, objectKey, bucketName, taskID)
+			urfm.deleteCacheTaskInMap(taskID)
+
+		}()
+	}
+
+	urfm.cachingTaskLock.Unlock()
+
+	log.Infof("cacheObject object content %s and length is %d and content type is %s and digest is %s", fmt.Sprint(meta.ContentLength), meta.ContentType, urlMeta.Digest)
+
+	if urfm.config.ObjectStorage.Name == "sugon" || urfm.config.ObjectStorage.Name == "starlight" {
+		dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		headers.ContentType:                 meta.ContentType,
+		headers.ContentLength:               fmt.Sprint(meta.ContentLength),
+		config.HeaderUrchinObjectMetaDigest: urlMeta.Digest,
+		"StatusCode":                        1,
+		"StatusMsg":                         "Caching",
+		"TaskID":                            taskID,
+		"SignedUrl":                         "",
+		"DataRoot":                          dataRootName,
+		"DataPath":                          objectKey,
+		"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+	})
+}
+
+// cacheObject uses to download object data in current peer os dir & object cacheBucket & return object url
+func (urfm *UrchinFileManager) deleteCacheTaskInMap(taskID string) {
+	urfm.cachingTasks.Delete(taskID)
+
+	logger.Info("delete caching task")
+	//confirm delete
+	for i := 0; i < 3; i++ {
+		_, cachingOk := urfm.cachingTasks.Load(taskID)
+		if cachingOk {
+			logger.Errorf("delete caching task not ok, delete again")
+			urfm.cachingTasks.Delete(taskID)
+		} else {
+			break
+		}
+	}
+}
+
+// CheckObject check the object taskID status
+func (urfm *UrchinFileManager) CheckObject(ctx *gin.Context) {
+	var params objectstorage.ObjectParams
+	if err := ctx.ShouldBindUri(&params); err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
+		return
+	}
+
+	var query objectstorage.GetObjectQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
+		return
+	}
+
+	bucketEndpoint := strings.SplitN(params.ID, ".", 2)
+
+	if len(bucketEndpoint) < 2 {
+		logger.Errorf("checkObject sourceBucket %s is invalid", bucketEndpoint)
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": "checkObject datasource" + params.ID + " is invalid"})
+		return
+	}
+
+	var (
+		sourceEndpoint = bucketEndpoint[1]
+		bucketName     = bucketEndpoint[0]
+		objectKey      = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
+		filter         = query.Filter
+		err            error
+	)
+
+	//1. Check Endpoint
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(urfm.config, sourceEndpoint)
+	if !isInControl {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": "DataSource Not In BackendPool:" + http.StatusText(http.StatusForbidden)})
+		return
+	}
+	//2. Check Target Bucket
+	if !objectstorage.CheckTargetBucketIsInControl(urfm.config, sourceEndpoint, bucketName) {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": "checkObject,please check datasource bucket & cache bucket is in control & exist in config"})
+		return
+	}
+
+	// Initialize filter field.
+	urlMeta := &commonv1.UrlMeta{Filter: urfm.config.ObjectStorage.Filter}
+	if filter != "" {
+		urlMeta.Filter = filter
+	}
+
+	//3. Check Current Peer CacheBucket is exist datasource Object
+	dstClient, err := objectstorage.Client(urfm.config.ObjectStorage.Name,
+		urfm.config.ObjectStorage.Region,
+		urfm.config.ObjectStorage.Endpoint,
+		urfm.config.ObjectStorage.AccessKey,
+		urfm.config.ObjectStorage.SecretKey)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	anyRes, _, err := retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, time.Duration(urfm.config.ObjectStorage.RetryTimeOutSec)*time.Second)
+		defer cancel()
+
+		meta, isExist, err := dstClient.GetObjectMetadata(ctxSub, urfm.config.ObjectStorage.CacheBucket, objectKey)
+		if isExist && err == nil {
+			//exist, skip retry
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
+		} else {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
+		}
+	})
+
+	if err != nil {
+		logger.Errorf("checkObject, Endpoint %s CacheBucket %s get meta error:%s", urfm.config.ObjectStorage.Endpoint, urfm.config.ObjectStorage.CacheBucket, err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	dataRootName := urfm.config.ObjectStorage.CacheBucket
+	if urfm.config.ObjectStorage.Name == "sugon" || urfm.config.ObjectStorage.Name == "starlight" {
+		dataRootName = filepath.Join("/", strings.ReplaceAll(dataRootName, "-", "/"))
+	}
+
+	res := anyRes.(objectstorage.RetryRes)
+	if res.IsExist {
+		dstMeta := res.Res
+
+		ctx.JSON(http.StatusOK, gin.H{
+			headers.ContentType:                 dstMeta.ContentType,
+			headers.ContentLength:               fmt.Sprint(dstMeta.ContentLength),
+			config.HeaderUrchinObjectMetaDigest: dstMeta.Digest,
+			"StatusCode":                        0,
+			"StatusMsg":                         "Succeed",
+			"TaskID":                            "",
+			"SignedUrl":                         "",
+			"DataRoot":                          dataRootName,
+			"DataPath":                          objectKey,
+			"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+		})
+
+		return
+	} else {
+		//4.Check Exist in DstDataCenter's Control Buckets
+		for _, bucket := range urfm.config.ObjectStorage.Buckets {
+			dataRootName := bucket.Name
+			if bucket.Name != urfm.config.ObjectStorage.CacheBucket && bucket.Enable {
+				if urfm.config.ObjectStorage.Name == "sugon" || urfm.config.ObjectStorage.Name == "starlight" {
+					dataRootName = filepath.Join("/", strings.ReplaceAll(bucket.Name, "-", "/"))
+				}
+				meta, isExist, err := dstClient.GetObjectMetadata(ctx, bucket.Name, objectKey)
+
+				if isExist {
+
+					ctx.JSON(http.StatusOK, gin.H{
+						headers.ContentType:                 meta.ContentType,
+						headers.ContentLength:               fmt.Sprint(meta.ContentLength),
+						config.HeaderUrchinObjectMetaDigest: meta.Digest,
+						"StatusCode":                        0,
+						"StatusMsg":                         "Succeed",
+						"TaskID":                            "",
+						"SignedUrl":                         "",
+						"DataRoot":                          dataRootName,
+						"DataPath":                          objectKey,
+						"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+					})
+
+					return
+				}
+
+				if err != nil {
+					logger.Errorf("Endpoint %s Control Bucket %s get meta error:%s", urfm.config.ObjectStorage.Endpoint, bucket.Name, err.Error())
+					ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+					return
+				}
+			}
+		}
+
+		logger.Infof("DstData Endpoint %s Control Buckets not exist object:%s", urfm.config.ObjectStorage.Endpoint, objectKey)
+	}
+
+	//DstDataSet Not Exist In DstDataCenter, Move it from DataSource to Dst DataCenter
+	//5. Check dataSource is existed this Object
+	sourceClient, err := objectstorage.Client(urfm.config.SourceObs.Name,
+		urfm.config.SourceObs.Region,
+		urfm.config.SourceObs.Endpoint,
+		urfm.config.SourceObs.AccessKey,
+		urfm.config.SourceObs.SecretKey)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	anyRes, _, err = retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		//ctxSub, cancel := context.WithTimeout(ctx, 3*time.Second)
+		//defer cancel()
+
+		meta, isExist, err := sourceClient.GetObjectMetadata(ctx, bucketName, objectKey)
+		if isExist && err == nil {
+			//exist, skip retry
+			return objectstorage.RetryRes{Res: meta, IsExist: isExist}, true, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, false, err
+		} else {
+			return objectstorage.RetryRes{Res: nil, IsExist: false}, true, err
+		}
+	})
+
+	if err != nil {
+		logger.Errorf("dataSource %s bucket %s object %s err %v ", urfm.config.SourceObs.Endpoint, bucketName, objectKey, err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+	res = anyRes.(objectstorage.RetryRes)
+	if !res.IsExist {
+		logger.Errorf("dataSource %s bucket %s object %s not found", urfm.config.SourceObs.Endpoint, bucketName, objectKey)
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": "dataSource:" + urfm.config.SourceObs.Endpoint + "." + bucketName + "/" + objectKey + " not found"})
+		return
+	}
+
+	sourceMeta := res.Res
+
+	urlMeta.Digest = sourceMeta.Digest
+
+	signURL, err := sourceClient.GetSignURL(ctx, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
+
+	taskID := idgen.TaskIDV1(signURL, urlMeta)
+	log := logger.WithTaskID(taskID)
+
+	_, ok := urfm.cachingTasks.Load(taskID)
+
+	log.Infof("checkObject object %s taskID %s isCaching:%v meta: %s %#v", objectKey, taskID, ok, signURL, urlMeta)
+
+	if ok {
+		ctx.JSON(http.StatusOK, gin.H{
+			headers.ContentType:                 sourceMeta.ContentType,
+			headers.ContentLength:               fmt.Sprint(sourceMeta.ContentLength),
+			config.HeaderUrchinObjectMetaDigest: sourceMeta.Digest,
+			"StatusCode":                        1,
+			"StatusMsg":                         "Caching",
+			"TaskID":                            taskID,
+			"SignedUrl":                         "",
+			"DataRoot":                          dataRootName,
+			"DataPath":                          objectKey,
+			"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+		})
+	} else {
+		dstMeta, isExist, err := dstClient.GetObjectMetadata(ctx, urfm.config.ObjectStorage.CacheBucket, objectKey)
+
+		if err != nil && !strings.Contains(err.Error(), "404") {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return
+		}
+
+		if isExist {
+			ctx.JSON(http.StatusOK, gin.H{
+				headers.ContentType:                 dstMeta.ContentType,
+				headers.ContentLength:               fmt.Sprint(dstMeta.ContentLength),
+				config.HeaderUrchinObjectMetaDigest: dstMeta.Digest,
+				"StatusCode":                        0,
+				"StatusMsg":                         "Succeed",
+				"TaskID":                            "",
+				"SignedUrl":                         "",
+				"DataRoot":                          dataRootName,
+				"DataPath":                          objectKey,
+				"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+			})
+		} else {
+			ctx.JSON(http.StatusOK, gin.H{
+				headers.ContentType:                 sourceMeta.ContentType,
+				headers.ContentLength:               fmt.Sprint(sourceMeta.ContentLength),
+				config.HeaderUrchinObjectMetaDigest: sourceMeta.Digest,
+				"StatusCode":                        2,
+				"StatusMsg":                         "NotFound",
+				"TaskID":                            "",
+				"SignedUrl":                         "",
+				"DataRoot":                          dataRootName,
+				"DataPath":                          objectKey,
+				"DataEndpoint":                      urfm.config.ObjectStorage.Endpoint,
+			})
+		}
+	}
+
+	return
 }

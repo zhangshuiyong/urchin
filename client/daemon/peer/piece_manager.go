@@ -1,18 +1,4 @@
-/*
- *     Copyright 2020 The Dragonfly Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 
 //go:generate mockgen -destination piece_manager_mock.go -source piece_manager.go -package peer
 
@@ -374,11 +360,25 @@ func (pm *pieceManager) DownloadSource(ctx context.Context, pt Task, peerTaskReq
 
 singleDownload:
 	// 1. download pieces from source
-	response, err := source.Download(backSourceRequest)
+	anyResp, err := retry.SimpleRun(0.05, 0.2, 5, func() (any, bool, error) {
+		response, err := source.Download(backSourceRequest)
+		if err == nil && pm.needRetry(response.StatusCode) {
+			log.Debugf("retry back source, StatusCode:%d, Url:%s", response.StatusCode, peerTaskRequest.Url)
+			return response, false, nil
+		} else if err == nil {
+			return response, true, nil
+		} else {
+			return nil, true, err
+		}
+
+	})
+	//
+	//response, err := source.Download(backSourceRequest)
 	// TODO update expire info
 	if err != nil {
 		return err
 	}
+	response := anyResp.(*source.Response)
 	err = response.Validate()
 	if err != nil {
 		log.Errorf("back source status code %d/%s", response.StatusCode, response.Status)
@@ -898,11 +898,24 @@ func (pm *pieceManager) downloadPieceFromSource(ctx context.Context,
 	backSourceRequest.Header.Set(headers.Range, "bytes="+rg)
 	log.Debugf("piece %d back source header: %#v", num, backSourceRequest.Header)
 
-	response, err := source.Download(backSourceRequest)
+	anyResp, err := retry.SimpleRun(0.05, 0.2, 5, func() (any, bool, error) {
+		response, err := source.Download(backSourceRequest)
+		if err == nil && pm.needRetry(response.StatusCode) {
+			log.Debugf("retry back source, StatusCode:%d, Url:%s", response.StatusCode, peerTaskRequest.Url)
+			return response, false, nil
+		} else if err == nil {
+			return response, true, nil
+		} else {
+			return nil, true, err
+		}
+
+	})
+	//response, err := source.Download(backSourceRequest)
 	if err != nil {
 		log.Errorf("piece %d back source response error: %s", num, err)
 		return err
 	}
+	response := anyResp.(*source.Response)
 	defer response.Body.Close()
 
 	err = response.Validate()
@@ -945,4 +958,8 @@ func (pm *pieceManager) downloadPieceFromSource(ctx context.Context,
 	pt.ReportPieceResult(request, result, nil)
 	pt.PublishPieceInfo(num, uint32(result.Size))
 	return nil
+}
+
+func (pm *pieceManager) needRetry(statusCode int) bool {
+	return statusCode == http.StatusServiceUnavailable // || statusCode == http.StatusForbidden
 }

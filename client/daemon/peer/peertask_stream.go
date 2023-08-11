@@ -17,9 +17,11 @@
 package peer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/go-http-utils/headers"
 	"go.opentelemetry.io/otel/trace"
@@ -45,6 +47,8 @@ type StreamTaskRequest struct {
 	Range *http.Range
 	// peer's id and must be global uniqueness
 	PeerID string
+	//
+	NeedPieceDownloadStatusChan bool
 }
 
 // StreamTask represents a peer task with stream io for reading directly without once more disk io
@@ -61,6 +65,8 @@ type streamTask struct {
 	span              trace.Span
 	peerTaskConductor *peerTaskConductor
 	pieceCh           chan *PieceInfo
+	reserveBuf        []byte
+	reserveIdx        int
 }
 
 func (ptm *peerTaskManager) newStreamTask(
@@ -92,6 +98,7 @@ func (ptm *peerTaskManager) newStreamTask(
 		span:                span,
 		peerTaskConductor:   ptc,
 		pieceCh:             ptc.broker.Subscribe(),
+		reserveIdx:          -1,
 	}
 	return pt, nil
 }
@@ -164,7 +171,7 @@ func (s *streamTask) Start(ctx context.Context) (io.ReadCloser, map[string]strin
 	return readCloser, attr, nil
 }
 
-func (s *streamTask) writeOnePiece(w io.Writer, pieceNum int32) (int64, error) {
+func (s *streamTask) writeOnePiece(w io.Writer, pieceNum int32, reserved bool) (int64, error) {
 	pr, pc, err := s.peerTaskConductor.GetStorage().ReadPiece(s.ctx, &storage.ReadPieceRequest{
 		PeerTaskMetadata: storage.PeerTaskMetadata{
 			PeerID: s.peerTaskConductor.peerID,
@@ -177,6 +184,18 @@ func (s *streamTask) writeOnePiece(w io.Writer, pieceNum int32) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	if reserved {
+		_, err := pr.Read(s.reserveBuf)
+		if err != nil {
+			s.reserveIdx = -1
+			pc.Close()
+			return 0, err
+		}
+		s.reserveIdx = 0
+		return 0, pc.Close()
+	}
+
 	n, err := io.Copy(w, pr)
 	if err != nil {
 		pc.Close()
@@ -188,6 +207,7 @@ func (s *streamTask) writeOnePiece(w io.Writer, pieceNum int32) (int64, error) {
 func (s *streamTask) writeToPipe(firstPiece *PieceInfo, pw *io.PipeWriter) {
 	defer func() {
 		s.span.End()
+		s.reserveIdx = -1
 	}()
 	var (
 		desired int32
@@ -195,9 +215,30 @@ func (s *streamTask) writeToPipe(firstPiece *PieceInfo, pw *io.PipeWriter) {
 		err     error
 	)
 	piece = firstPiece
+
+	const (
+		PieceCacheSize = 1024 * 1024 * 1
+	)
+
+	rangeSize := int(piece.RangeSize)
+	if piece.RangeSize > PieceCacheSize {
+		s.reserveBuf = make([]byte, piece.RangeSize)
+	}
+
+	tickTimer := time.NewTicker(5 * time.Second)
 	for {
 		if desired == piece.Num || desired <= piece.OrderedNum {
-			desired, err = s.writeOrderedPieces(desired, piece.OrderedNum, pw)
+			if s.reserveIdx != -1 {
+				reader := bytes.NewReader(s.reserveBuf[s.reserveIdx:])
+				_, err := io.Copy(pw, reader)
+				if err != nil {
+					return
+				}
+
+				s.reserveIdx = -1
+			}
+
+			desired, err = s.writeOrderedPieces(desired, piece, pw)
 			if err != nil {
 				return
 			}
@@ -207,6 +248,14 @@ func (s *streamTask) writeToPipe(firstPiece *PieceInfo, pw *io.PipeWriter) {
 		case piece = <-s.pieceCh:
 			continue
 		case <-s.peerTaskConductor.successCh:
+			if s.reserveIdx != -1 {
+				reader := bytes.NewReader(s.reserveBuf[s.reserveIdx:])
+				_, err := io.Copy(pw, reader)
+				if err != nil {
+					return
+				}
+			}
+
 			s.writeRemainingPieces(desired, pw)
 			return
 		case <-s.ctx.Done():
@@ -220,15 +269,33 @@ func (s *streamTask) writeToPipe(firstPiece *PieceInfo, pw *io.PipeWriter) {
 			s.Errorf(err.Error())
 			s.closeWithError(pw, err)
 			return
+		case <-tickTimer.C:
+			if s.reserveIdx != -1 {
+				readLen := len(s.reserveBuf) / 20
+				reader := bytes.NewReader(s.reserveBuf[s.reserveIdx : s.reserveIdx+readLen])
+				_, err := io.Copy(pw, reader)
+				if err != nil {
+					return
+				}
+
+				s.reserveIdx += readLen
+				if s.reserveIdx >= rangeSize {
+					s.reserveIdx = -1
+				}
+
+				s.Debugf("wrote reserve piece %d to pipe, size %d", desired, readLen)
+				continue
+			}
+
 		}
 	}
 }
 
-func (s *streamTask) writeOrderedPieces(desired, orderedNum int32, pw *io.PipeWriter) (int32, error) {
+func (s *streamTask) writeOrderedPieces(desired int32, piece *PieceInfo, pw *io.PipeWriter) (int32, error) {
 	for {
 		_, span := tracer.Start(s.ctx, config.SpanWriteBackPiece)
 		span.SetAttributes(config.AttributePiece.Int(int(desired)))
-		wrote, err := s.writeOnePiece(pw, desired)
+		wrote, err := s.writeOnePiece(pw, desired, !piece.Finished && desired == piece.OrderedNum && len(s.reserveBuf) > 0)
 		if err != nil {
 			span.RecordError(err)
 			span.End()
@@ -241,7 +308,7 @@ func (s *streamTask) writeOrderedPieces(desired, orderedNum int32, pw *io.PipeWr
 		span.End()
 
 		desired++
-		if desired > orderedNum {
+		if desired > piece.OrderedNum {
 			break
 		}
 	}
@@ -258,7 +325,7 @@ func (s *streamTask) writeRemainingPieces(desired int32, pw *io.PipeWriter) {
 		}
 		_, span := tracer.Start(s.ctx, config.SpanWriteBackPiece)
 		span.SetAttributes(config.AttributePiece.Int(int(desired)))
-		wrote, err := s.writeOnePiece(pw, desired)
+		wrote, err := s.writeOnePiece(pw, desired, false)
 		if err != nil {
 			span.RecordError(err)
 			span.End()

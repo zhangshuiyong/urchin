@@ -16,20 +16,13 @@
 
 package objectstorage
 
-import "mime/multipart"
-
-type ObjectParams struct {
-	ID        string `uri:"id" binding:"required"`
-	ObjectKey string `uri:"object_key" binding:"required"`
-}
+import (
+	"mime/multipart"
+)
 
 type PutObjectRequset struct {
 	Mode        uint                  `form:"mode,default=0" binding:"omitempty,gte=0,lte=2"`
 	Filter      string                `form:"filter" binding:"omitempty"`
 	MaxReplicas int                   `form:"maxReplicas" binding:"omitempty,gt=0,lte=100"`
 	File        *multipart.FileHeader `form:"file" binding:"required"`
-}
-
-type GetObjectQuery struct {
-	Filter string `form:"filter" binding:"omitempty"`
 }

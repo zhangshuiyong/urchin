@@ -25,11 +25,23 @@ const (
 
 	// ServiceNameOBS is name of obs storage.
 	ServiceNameOBS = "obs"
+
+	// ServiceNameMINIO is name of minio storage.
+	ServiceNameMINIO = "minio"
+
+	// ServiceNameSUGON is name of sugon storage.
+	ServiceNameSUGON = "sugon"
+
+	// ServiceNameSTARLIGHT is name of starlight storage.
+	ServiceNameSTARLIGHT = "starlight"
 )
 
 const (
 	// MetaDigest is key of digest meta.
-	MetaDigest = "digest"
+	MetaDigest            = "digest"
+	MetaDigestUpper       = "Digest"
+	MaxFolderDepth        = 10
+	MaxFolderListPageSize = 65536
 )
 
 // Method is the client operation method .

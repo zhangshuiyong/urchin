@@ -1,19 +1,3 @@
-/*
- *     Copyright 2022 The Dragonfly Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 //go:generate mockgen -destination mocks/objectstorage_mock.go -source objectstorage.go -package mocks
 
 package objectstorage
@@ -25,8 +9,10 @@ import (
 	urchindataset "d7y.io/dragonfly/v2/client/daemon/urchin_dataset"
 	urchindatasetv "d7y.io/dragonfly/v2/client/daemon/urchin_dataset_vesion"
 	urchinfile "d7y.io/dragonfly/v2/client/daemon/urchin_file"
+	urchinfolder "d7y.io/dragonfly/v2/client/daemon/urchin_folder"
 	urchinpeers "d7y.io/dragonfly/v2/client/daemon/urchin_peers"
 	urchintask "d7y.io/dragonfly/v2/client/daemon/urchin_task"
+	"d7y.io/dragonfly/v2/pkg/retry"
 	"fmt"
 	"io"
 	"math"
@@ -99,29 +85,49 @@ type ObjectStorage interface {
 // objectStorage provides object storage function.
 type objectStorage struct {
 	*http.Server
-	config            *config.DaemonOption
-	dynconfig         config.Dynconfig
-	peerTaskManager   peer.TaskManager
-	storageManager    storage.Manager
-	peerIDGenerator   peer.IDGenerator
-	urchinPeer        *urchinpeers.UrchinPeer
-	urchinTaskManager *urchintask.UrchinTaskManager
-	urchinFileManager *urchinfile.UrchinFileManager
+	config              *config.DaemonOption
+	dynconfig           config.Dynconfig
+	peerTaskManager     peer.TaskManager
+	storageManager      storage.Manager
+	peerIDGenerator     peer.IDGenerator
+	urchinPeer          *urchinpeers.UrchinPeer
+	urchinTaskManager   *urchintask.UrchinTaskManager
+	urchinFileManager   *urchinfile.UrchinFileManager
+	urchinFolderManager *urchinfolder.UrchinFolderManager
 }
 
 // New returns a new ObjectStorage instence.
 func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *scheduler.PeerHost, peerTaskManager peer.TaskManager, storageManager storage.Manager, logDir string) (ObjectStorage, error) {
-	o := &objectStorage{
-		config:            cfg,
-		dynconfig:         dynconfig,
-		peerTaskManager:   peerTaskManager,
-		storageManager:    storageManager,
-		peerIDGenerator:   peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String()),
-		urchinPeer:        urchinpeers.NewPeer(peerHost, &cfg.Storage),
-		urchinTaskManager: urchintask.NewUrchinTaskManager(peerTaskManager),
-		urchinFileManager: nil,
+	urchinTaskManager, err := urchintask.NewUrchinTaskManager(cfg, peerTaskManager)
+	if err != nil {
+		logger.Errorf("NewUrchinTaskManager err:%v", err)
+		return nil, err
 	}
-	o.urchinFileManager = urchinfile.NewUrchinFileManager(o.config, o.dynconfig, o.peerTaskManager, o.storageManager, o.peerIDGenerator)
+
+	peerIDGenerator := peer.NewPeerIDGenerator(cfg.Host.AdvertiseIP.String())
+	urchinFileManager, err := urchinfile.NewUrchinFileManager(cfg, dynconfig, peerTaskManager, storageManager, peerIDGenerator, urchinTaskManager)
+	if err != nil {
+		logger.Errorf("NewUrchinFileManager err:%v", err)
+		return nil, err
+	}
+
+	urchinFolderManager, err := urchinfolder.NewUrchinFolderManager(cfg, peerTaskManager, peerIDGenerator, urchinTaskManager)
+	if err != nil {
+		logger.Errorf("NewUrchinFolderManager err:%v", err)
+		return nil, err
+	}
+
+	o := &objectStorage{
+		config:              cfg,
+		dynconfig:           dynconfig,
+		peerTaskManager:     peerTaskManager,
+		storageManager:      storageManager,
+		peerIDGenerator:     peerIDGenerator,
+		urchinPeer:          urchinpeers.NewPeer(peerHost, &cfg.Storage),
+		urchinTaskManager:   urchinTaskManager,
+		urchinFileManager:   urchinFileManager,
+		urchinFolderManager: urchinFolderManager,
+	}
 	router := o.initRouter(cfg, logDir)
 	o.Server = &http.Server{
 		Handler: router,
@@ -130,7 +136,7 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 	return o, nil
 }
 
-// Started object storage server.
+// Serve Started object storage server.
 func (o *objectStorage) Serve(lis net.Listener, port int) error {
 	o.urchinPeer.PeerPort = port
 	return o.Server.Serve(lis)
@@ -186,9 +192,14 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 	// Buckets
 	b := r.Group(RouterGroupBuckets)
 	b.HEAD(":id/objects/*object_key", o.headObject)
+	b.POST(":id/cache_object/*object_key", o.urchinFileManager.CacheObject)
+	b.GET(":id/check_object/*object_key", o.urchinFileManager.CheckObject)
 	b.GET(":id/objects/*object_key", o.getObject)
 	b.DELETE(":id/objects/*object_key", o.destroyObject)
 	b.PUT(":id/objects/*object_key", o.putObject)
+
+	b.POST(":id/cache_folder/*folder_key", o.urchinFolderManager.CacheFolder)
+	b.GET(":id/check_folder/*folder_key", o.urchinFolderManager.CheckFolder)
 
 	api := r.Group("/api/v1")
 	api.GET("/peers", urchinpeers.GetUrchinPeers)
@@ -207,6 +218,7 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 	api.GET("/dataset/:dataset_id/versions", urchindatasetv.ListDataSetVersions)
 
 	api.GET("/task/:task_id", o.urchinTaskManager.GetTask)
+	api.GET("/tasks", o.urchinTaskManager.GetTasks)
 	api.PUT("/file/upload", o.urchinFileManager.UploadFile)
 	api.GET("/file/stat", o.urchinFileManager.StatFile)
 
@@ -220,25 +232,72 @@ func (o *objectStorage) getHealth(ctx *gin.Context) {
 
 // headObject uses to head object.
 func (o *objectStorage) headObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
+	bucketEndpoint := strings.SplitN(params.ID, ".", 2)
+
+	if len(bucketEndpoint) < 2 {
+		logger.Errorf("sourceBucket %s is invalid", bucketEndpoint)
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": http.StatusText(http.StatusNotFound)})
+		return
+	}
+
 	var (
-		bucketName = params.ID
-		objectKey  = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
+		sourceEndpoint = bucketEndpoint[1]
+		bucketName     = bucketEndpoint[0]
+		objectKey      = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
 	)
 
-	client, err := o.client()
+	//1. Check Endpoint
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
+	if !isInControl {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
+		return
+	}
+	//2. Check Target Bucket
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": "please check datasource bucket & cache bucket is in control & exist in config"})
+		return
+	}
+
+	//3. Check Object
+	client, err := objectstorage.Client(o.config.SourceObs.Name,
+		o.config.SourceObs.Region,
+		o.config.SourceObs.Endpoint,
+		o.config.SourceObs.AccessKey,
+		o.config.SourceObs.SecretKey)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
 
-	meta, isExist, err := client.GetObjectMetadata(ctx, bucketName, objectKey)
-	if err != nil {
+	anyMeta, isExist, err := retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+
+		meta, isExist, err := client.GetObjectMetadata(ctxSub, bucketName, objectKey)
+
+		if isExist {
+			//exist, skip retry
+			return meta, isExist, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return nil, false, err
+		} else if err != nil && strings.Contains(err.Error(), "404") {
+			//not exist, err is Known, set err = nil to skip retry
+			return nil, isExist, nil
+		} else {
+			//retry this request, do not cancel this request
+			return nil, false, err
+		}
+	})
+
+	if err != nil && !strings.Contains(err.Error(), "404") {
+		logger.Errorf("Endpoint %s Bucket %s get meta error:%s", o.config.SourceObs.Endpoint, bucketName, err.Error())
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
@@ -247,6 +306,8 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"errors": http.StatusText(http.StatusNotFound)})
 		return
 	}
+
+	meta := anyMeta.(*objectstorage.ObjectMetadata)
 
 	ctx.Header(headers.ContentDisposition, meta.ContentDisposition)
 	ctx.Header(headers.ContentEncoding, meta.ContentEncoding)
@@ -254,7 +315,7 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 	ctx.Header(headers.ContentLength, fmt.Sprint(meta.ContentLength))
 	ctx.Header(headers.ContentType, meta.ContentType)
 	ctx.Header(headers.ETag, meta.ETag)
-	ctx.Header(config.HeaderDragonflyObjectMetaDigest, meta.Digest)
+	ctx.Header(config.HeaderUrchinObjectMetaDigest, meta.Digest)
 
 	ctx.Status(http.StatusOK)
 	return
@@ -262,25 +323,45 @@ func (o *objectStorage) headObject(ctx *gin.Context) {
 
 // getObject uses to download object data.
 func (o *objectStorage) getObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
-	var query GetObjectQuery
+	var query objectstorage.GetObjectQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
 	}
 
+	bucketEndpoint := strings.SplitN(params.ID, ".", 2)
+
+	if len(bucketEndpoint) < 2 {
+		ctx.JSON(http.StatusNotFound, gin.H{"errors": http.StatusText(http.StatusNotFound)})
+		return
+	}
+
 	var (
-		bucketName = params.ID
-		objectKey  = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
-		filter     = query.Filter
-		rg         nethttp.Range
-		err        error
+		sourceEndpoint = bucketEndpoint[1]
+		bucketName     = bucketEndpoint[0]
+		objectKey      = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
+		filter         = query.Filter
+		rg             *nethttp.Range
+		err            error
 	)
+
+	//1. Check Endpoint
+	isInControl := objectstorage.ConfirmDataSourceInBackendPool(o.config, sourceEndpoint)
+	if !isInControl {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
+		return
+	}
+	//2. Check Target Bucket
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, sourceEndpoint, bucketName) {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
+		return
+	}
 
 	// Initialize filter field.
 	urlMeta := &commonv1.UrlMeta{Filter: o.config.ObjectStorage.Filter}
@@ -288,33 +369,63 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 		urlMeta.Filter = filter
 	}
 
-	client, err := o.client()
+	//3. Check dataSource Object
+	sourceClient, err := objectstorage.Client(o.config.SourceObs.Name,
+		o.config.SourceObs.Region,
+		o.config.SourceObs.Endpoint,
+		o.config.SourceObs.AccessKey,
+		o.config.SourceObs.SecretKey)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
 
-	meta, isExist, err := client.GetObjectMetadata(ctx, bucketName, objectKey)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
-		return
-	}
+	//3. Check datasource Object
+	anyMeta, isExist, err := retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, time.Duration(o.config.ObjectStorage.RetryTimeOutSec)*time.Second)
+		defer cancel()
+
+		meta, isExist, err := sourceClient.GetObjectMetadata(ctxSub, bucketName, objectKey)
+
+		if isExist {
+			//exist, skip retry
+			return meta, isExist, nil
+		} else if err != nil && objectstorage.NeedRetry(err) {
+			//retry this request, do not cancel this request
+			return nil, false, err
+		} else if err != nil && strings.Contains(err.Error(), "404") {
+			//not exist, err is Known, set err = nil to skip retry
+			return nil, isExist, nil
+		} else {
+			//retry this request, do not cancel this request
+			return nil, false, err
+		}
+	})
 
 	if !isExist {
 		ctx.JSON(http.StatusNotFound, gin.H{"errors": http.StatusText(http.StatusNotFound)})
 		return
 	}
 
+	if err != nil && !strings.Contains(err.Error(), "404") {
+		logger.Errorf("datasource Endpoint %s sourceBucket %s get meta error:%s", o.config.SourceObs.Endpoint, bucketName, err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	meta := anyMeta.(*objectstorage.ObjectMetadata)
+
 	urlMeta.Digest = meta.Digest
 
 	// Parse http range header.
 	rangeHeader := ctx.GetHeader(headers.Range)
 	if len(rangeHeader) > 0 {
-		rg, err = nethttp.ParseOneRange(rangeHeader, math.MaxInt64)
+		rangeValue, err := nethttp.ParseOneRange(rangeHeader, math.MaxInt64)
 		if err != nil {
 			ctx.JSON(http.StatusRequestedRangeNotSatisfiable, gin.H{"errors": err.Error()})
 			return
 		}
+		rg = &rangeValue
 
 		// Range header in dragonfly is without "bytes=".
 		urlMeta.Range = strings.TrimLeft(rangeHeader, "bytes=")
@@ -324,20 +435,22 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 		urlMeta.Digest = ""
 	}
 
-	signURL, err := client.GetSignURL(ctx, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+	signURL, err := sourceClient.GetSignURL(ctx, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
 
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	log := logger.WithTaskID(taskID)
 	log.Infof("get object %s meta: %s %#v", objectKey, signURL, urlMeta)
 
-	reader, attr, err := o.peerTaskManager.StartStreamTask(ctx, &peer.StreamTaskRequest{
+	reader, attr, _, _, err := o.peerTaskManager.StartStreamTask(ctx, &peer.StreamTaskRequest{
 		URL:     signURL,
 		URLMeta: urlMeta,
-		Range:   &rg,
+		Range:   rg,
 		PeerID:  o.peerIDGenerator.PeerID(),
 	})
 	if err != nil {
@@ -359,15 +472,9 @@ func (o *objectStorage) getObject(ctx *gin.Context) {
 
 // destroyObject uses to delete object data.
 func (o *objectStorage) destroyObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
-		return
-	}
-
-	client, err := o.client()
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
 
@@ -376,9 +483,32 @@ func (o *objectStorage) destroyObject(ctx *gin.Context) {
 		objectKey  = strings.TrimPrefix(params.ObjectKey, string(os.PathSeparator))
 	)
 
-	logger.Infof("destroy object %s in bucket %s", objectKey, bucketName)
-	if err := client.DeleteObject(ctx, bucketName, objectKey); err != nil {
+	client, err := objectstorage.Client(o.config.ObjectStorage.Name,
+		o.config.ObjectStorage.Region,
+		o.config.ObjectStorage.Endpoint,
+		o.config.ObjectStorage.AccessKey,
+		o.config.ObjectStorage.SecretKey)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	logger.Infof("destroy object %s in bucket %s", objectKey, bucketName)
+	_, _, err = retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+
+		if err := client.DeleteObject(ctxSub, bucketName, objectKey); err != nil {
+			if objectstorage.NeedRetry(err) {
+				return nil, false, err
+			}
+
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return nil, true, err
+		}
+		return nil, false, nil
+	})
+	if err != nil {
 		return
 	}
 
@@ -388,7 +518,7 @@ func (o *objectStorage) destroyObject(ctx *gin.Context) {
 
 // putObject uses to upload object data.
 func (o *objectStorage) putObject(ctx *gin.Context) {
-	var params ObjectParams
+	var params objectstorage.ObjectParams
 	if err := ctx.ShouldBindUri(&params); err != nil {
 		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
 		return
@@ -409,17 +539,41 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 		fileHeader  = form.File
 	)
 
-	client, err := o.client()
+	//1. Check bingding endpoint Bucket is Control
+	if !objectstorage.CheckTargetBucketIsInControl(o.config, o.config.ObjectStorage.Endpoint, bucketName) {
+		ctx.JSON(http.StatusForbidden, gin.H{"errors": http.StatusText(http.StatusForbidden)})
+		return
+	}
+
+	dstClient, err := objectstorage.Client(o.config.ObjectStorage.Name,
+		o.config.ObjectStorage.Region,
+		o.config.ObjectStorage.Endpoint,
+		o.config.ObjectStorage.AccessKey,
+		o.config.ObjectStorage.SecretKey)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
 
-	signURL, err := client.GetSignURL(ctx, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+	p, _, err := retry.Run(ctx, 0.05, 0.2, 3, func() (any, bool, error) {
+		ctxSub, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+		signURL, err := dstClient.GetSignURL(ctxSub, bucketName, objectKey, objectstorage.MethodGet, defaultSignExpireTime)
+		if err != nil {
+			if objectstorage.NeedRetry(err) {
+				return nil, false, err
+			}
+
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return nil, true, err
+		}
+		return signURL, false, nil
+	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
 	}
+	signURL := p.(string)
 
 	// Initialize url meta.
 	urlMeta := &commonv1.UrlMeta{Filter: o.config.ObjectStorage.Filter}
@@ -433,7 +587,7 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 	if maxReplicas == 0 {
 		maxReplicas = o.config.ObjectStorage.MaxReplicas
 	}
-
+	signURL, urlMeta = objectstorage.ConvertSignURL(ctx, signURL, urlMeta)
 	// Initialize task id and peer id.
 	taskID := idgen.TaskIDV1(signURL, urlMeta)
 	peerID := o.peerIDGenerator.PeerID()
@@ -475,7 +629,7 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 
 		// Import object to object storage.
 		log.Infof("import object %s to bucket %s", objectKey, bucketName)
-		if err := o.importObjectToBackend(ctx, bucketName, objectKey, dgst, fileHeader, client); err != nil {
+		if err := o.importObjectToBackend(ctx, o.config.ObjectStorage.Name, bucketName, objectKey, dgst, fileHeader, dstClient); err != nil {
 			log.Error(err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 			return
@@ -494,7 +648,7 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 		// Import object to object storage.
 		go func() {
 			log.Infof("import object %s to bucket %s", objectKey, bucketName)
-			if err := o.importObjectToBackend(context.Background(), bucketName, objectKey, dgst, fileHeader, client); err != nil {
+			if err := o.importObjectToBackend(context.Background(), o.config.ObjectStorage.Name, bucketName, objectKey, dgst, fileHeader, dstClient); err != nil {
 				log.Errorf("import object %s to bucket %s failed: %s", objectKey, bucketName, err.Error())
 				return
 			}
@@ -520,15 +674,23 @@ func (o *objectStorage) md5FromFileHeader(fileHeader *multipart.FileHeader) *dig
 }
 
 // importObjectToBackend uses to import object to backend.
-func (o *objectStorage) importObjectToBackend(ctx context.Context, bucketName, objectKey string, dgst *digest.Digest, fileHeader *multipart.FileHeader, client objectstorage.ObjectStorage) error {
+func (o *objectStorage) importObjectToBackend(ctx context.Context, storageName, bucketName, objectKey string, dgst *digest.Digest, fileHeader *multipart.FileHeader, client objectstorage.ObjectStorage) error {
 	f, err := fileHeader.Open()
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	if err := client.PutObject(ctx, bucketName, objectKey, dgst.String(), f); err != nil {
-		return err
+	if storageName == "sugon" || storageName == "starlight" {
+		err := client.PutObjectWithTotalLength(ctx, bucketName, objectKey, dgst.String(), fileHeader.Size, f)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := client.PutObject(ctx, bucketName, objectKey, dgst.String(), f)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -654,20 +816,4 @@ func (o *objectStorage) importObjectToSeedPeer(ctx context.Context, seedPeerHost
 	}
 
 	return nil
-}
-
-// client uses to generate client of object storage.
-func (o *objectStorage) client() (objectstorage.ObjectStorage, error) {
-	config, err := o.dynconfig.GetObjectStorage()
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := objectstorage.New(config.Name, config.Region, config.Endpoint,
-		config.AccessKey, config.SecretKey, objectstorage.WithS3ForcePathStyle(config.S3ForcePathStyle))
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
 }

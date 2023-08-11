@@ -145,6 +145,10 @@ func (s *s3) PutObject(ctx context.Context, bucketName, objectKey, digest string
 	return err
 }
 
+func (s *s3) PutObjectWithTotalLength(ctx context.Context, bucketName, objectKey, digest string, totalLength int64, reader io.Reader) error {
+	return nil
+}
+
 // DeleteObject deletes data of object.
 func (s *s3) DeleteObject(ctx context.Context, bucketName, objectKey string) error {
 	_, err := s.client.DeleteObjectWithContext(ctx, &awss3.DeleteObjectInput{
@@ -155,7 +159,12 @@ func (s *s3) DeleteObject(ctx context.Context, bucketName, objectKey string) err
 	return err
 }
 
-// DeleteObject deletes data of object.
+// DeleteObjects deletes data of objects.
+func (s *s3) DeleteObjects(ctx context.Context, bucketName string, objects []*ObjectMetadata) error {
+	return nil
+}
+
+// ListObjectMetadatas deletes data of object.
 func (s *s3) ListObjectMetadatas(ctx context.Context, bucketName, prefix, marker string, limit int64) ([]*ObjectMetadata, error) {
 	resp, err := s.client.ListObjectsWithContext(ctx, &awss3.ListObjectsInput{
 		Bucket:  aws.String(bucketName),
@@ -176,6 +185,11 @@ func (s *s3) ListObjectMetadatas(ctx context.Context, bucketName, prefix, marker
 	}
 
 	return metadatas, nil
+}
+
+// ListFolderObjects returns all objects of folder.
+func (s *s3) ListFolderObjects(ctx context.Context, bucketName, prefix string) ([]*ObjectMetadata, error) {
+	return nil, nil
 }
 
 // IsObjectExist returns whether the object exists.
@@ -241,4 +255,14 @@ func (s *s3) GetSignURL(ctx context.Context, bucketName, objectKey string, metho
 	}
 
 	return req.Presign(expire)
+}
+
+// CreateFolder creates folder of object storage.
+func (s *s3) CreateFolder(ctx context.Context, bucketName, folderName string, isEmptyFolder bool) error {
+	return nil
+}
+
+// GetFolderMetadata returns metadata of folder.
+func (s *s3) GetFolderMetadata(ctx context.Context, bucketName, folderKey string) (*ObjectMetadata, bool, error) {
+	return nil, true, nil
 }

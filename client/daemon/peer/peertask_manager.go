@@ -52,7 +52,7 @@ type TaskManager interface {
 		progress chan *FileTaskProgress, err error)
 	// StartStreamTask starts a peer task with stream io
 	StartStreamTask(ctx context.Context, req *StreamTaskRequest) (
-		readCloser io.ReadCloser, attribute map[string]string, err error)
+		readCloser io.ReadCloser, attribute map[string]string, subscribeFunc func() chan *PieceInfo, unSubscribeFunc func(chan *PieceInfo), err error)
 	// StartSeedTask starts a seed peer task
 	StartSeedTask(ctx context.Context, req *SeedTaskRequest) (
 		seedTaskResult *SeedTaskResponse, reuse bool, err error)
@@ -332,7 +332,8 @@ func (ptm *peerTaskManager) StartFileTask(ctx context.Context, req *FileTaskRequ
 	return progress, err
 }
 
-func (ptm *peerTaskManager) StartStreamTask(ctx context.Context, req *StreamTaskRequest) (io.ReadCloser, map[string]string, error) {
+func (ptm *peerTaskManager) StartStreamTask(ctx context.Context, req *StreamTaskRequest) (io.ReadCloser, map[string]string,
+	func() chan *PieceInfo, func(chan *PieceInfo), error) {
 	peerTaskRequest := &schedulerv1.PeerTaskRequest{
 		Url:         req.URL,
 		UrlMeta:     req.URLMeta,
@@ -344,19 +345,32 @@ func (ptm *peerTaskManager) StartStreamTask(ctx context.Context, req *StreamTask
 	if ptm.Multiplex {
 		r, attr, ok := ptm.tryReuseStreamPeerTask(ctx, req)
 		if ok {
+			logger.Debugf("StartStreamTask try reuse stream peer task, Url:%d", req.URL)
 			metrics.PeerTaskCacheHitCount.Add(1)
-			return r, attr, nil
+			return r, attr, nil, nil, nil
 		}
 	}
 
 	pt, err := ptm.newStreamTask(ctx, peerTaskRequest, req.Range)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// FIXME when failed due to SchedulerClient error, relocate SchedulerClient and retry
 	readCloser, attribute, err := pt.Start(ctx)
-	return readCloser, attribute, err
+	if err == nil && req.NeedPieceDownloadStatusChan {
+		subscribeFunc := func() chan *PieceInfo {
+			pieceChan := pt.peerTaskConductor.broker.Subscribe()
+			return pieceChan
+		}
+
+		unSubscribeFunc := func(pieceChan chan *PieceInfo) {
+			pt.peerTaskConductor.broker.Unsubscribe(pieceChan)
+		}
+
+		return readCloser, attribute, subscribeFunc, unSubscribeFunc, err
+	}
+	return readCloser, attribute, nil, nil, err
 }
 
 func (ptm *peerTaskManager) StartSeedTask(ctx context.Context, req *SeedTaskRequest) (response *SeedTaskResponse, reuse bool, err error) {
