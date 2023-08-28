@@ -21,7 +21,7 @@ import (
 )
 
 type PutObjectRequset struct {
-	Mode        uint                  `form:"mode,default=0" binding:"omitempty,gte=0,lte=2"`
+	Mode        uint                  `form:"mode,default=0" binding:"omitempty,gte=0,lte=3"`
 	Filter      string                `form:"filter" binding:"omitempty"`
 	MaxReplicas int                   `form:"maxReplicas" binding:"omitempty,gt=0,lte=100"`
 	File        *multipart.FileHeader `form:"file" binding:"required"`

@@ -45,19 +45,6 @@ import (
 )
 
 const (
-	// AsyncWriteBack writes the object asynchronously to the backend.
-	AsyncWriteBack = iota
-
-	// WriteBack writes the object synchronously to the backend.
-	WriteBack
-
-	// Ephemeral only writes the object to the dfdaemon.
-	// It is only provided for creating temporary objects between peers,
-	// and users are not allowed to use this mode.
-	Ephemeral
-)
-
-const (
 	PrometheusSubsystemName = "dragonfly_dfdaemon_object_stroage"
 	OtelServiceName         = "dragonfly-dfdaemon-object-storage"
 )
@@ -70,7 +57,7 @@ var GinLogFileName = "gin-object-stroage.log"
 
 const (
 	// defaultSignExpireTime is default expire of sign url.
-	defaultSignExpireTime = 5 * time.Minute
+	defaultSignExpireTime = 2 * 60 * time.Minute
 )
 
 // ObjectStorage is the interface used for object storage server.
@@ -116,6 +103,8 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 		logger.Errorf("NewUrchinFolderManager err:%v", err)
 		return nil, err
 	}
+
+	urchindataset.SetSetConfInfo(cfg, dynconfig)
 
 	o := &objectStorage{
 		config:              cfg,
@@ -616,13 +605,13 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 
 	// Handle task for backend.
 	switch mode {
-	case Ephemeral:
+	case objectstorage.Ephemeral:
 		ctx.Status(http.StatusOK)
 		return
-	case WriteBack:
+	case objectstorage.WriteBack:
 		// Import object to seed peer.
 		go func() {
-			if err := o.importObjectToSeedPeers(context.Background(), bucketName, objectKey, urlMeta.Filter, Ephemeral, fileHeader, maxReplicas, log); err != nil {
+			if err := o.importObjectToSeedPeers(context.Background(), bucketName, objectKey, urlMeta.Filter, objectstorage.Ephemeral, fileHeader, maxReplicas, log); err != nil {
 				log.Errorf("import object %s to seed peers failed: %s", objectKey, err)
 			}
 		}()
@@ -637,10 +626,10 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 
 		ctx.Status(http.StatusOK)
 		return
-	case AsyncWriteBack:
+	case objectstorage.AsyncWriteBack:
 		// Import object to seed peer.
 		go func() {
-			if err := o.importObjectToSeedPeers(context.Background(), bucketName, objectKey, urlMeta.Filter, Ephemeral, fileHeader, maxReplicas, log); err != nil {
+			if err := o.importObjectToSeedPeers(context.Background(), bucketName, objectKey, urlMeta.Filter, objectstorage.Ephemeral, fileHeader, maxReplicas, log); err != nil {
 				log.Errorf("import object %s to seed peers failed: %s", objectKey, err)
 			}
 		}()
@@ -655,6 +644,22 @@ func (o *objectStorage) putObject(ctx *gin.Context) {
 		}()
 
 		ctx.Status(http.StatusOK)
+		return
+
+	case objectstorage.ReplicaObjectStorage:
+		log.Infof("import object %s to bucket %s", objectKey, bucketName)
+		if err := o.importObjectToBackend(ctx, o.config.ObjectStorage.Name, bucketName, objectKey, dgst, fileHeader, dstClient); err != nil {
+			log.Error(err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"status_code":   0,
+			"status_msg":    "success",
+			"endpoint":      o.config.ObjectStorage.Endpoint,
+			"endpoint_path": bucketName + "." + objectKey,
+		})
 		return
 	}
 
@@ -689,6 +694,15 @@ func (o *objectStorage) importObjectToBackend(ctx context.Context, storageName, 
 	} else {
 		err := client.PutObject(ctx, bucketName, objectKey, dgst.String(), f)
 		if err != nil {
+			if strings.Contains(err.Error(), "408 Request Timeout") {
+				time.Sleep(time.Second * 3)
+				err = client.PutObject(ctx, bucketName, objectKey, dgst.String(), f)
+				if err != nil {
+					return err
+				}
+
+				return nil
+			}
 			return err
 		}
 	}

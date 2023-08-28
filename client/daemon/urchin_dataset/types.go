@@ -1,12 +1,11 @@
 package urchin_dataset
 
-var RedisClusterIP = []string{"192.168.23.209:6379"}
-
 const (
-	StoragePrefix        = "urchin"
-	StoragePrefixDataset = "urchin:dataset"
-	DatasetCreateTimeKey = "urchin:dataset:create_time_que"
-	DataSetTmpSortSet    = "tmpSortDatasetSet"
+	StoragePrefix         = "urchin"
+	StoragePrefixDataset  = "urchin:dataset"
+	DatasetCreateTimeKey  = "urchin:dataset:create_time_que"
+	DataSetTmpSortSet     = "tmpSortDatasetSet"
+	DefaultDatasetVersion = "default"
 )
 
 type UrchinDataSetParams struct {

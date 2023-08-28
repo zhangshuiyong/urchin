@@ -800,13 +800,13 @@ func (urf *UrchinFolderManager) moveObjectBetweenPeer(ctx *gin.Context,
 			tickTimer = time.NewTicker(60 * time.Second)
 			time.Sleep(time.Second * (4 + time.Duration(rand.Intn(3))))
 		} else if meta.ContentLength > MB_100 {
-			tickTimer = time.NewTicker(40 * time.Second)
+			tickTimer = time.NewTicker(50 * time.Second)
 			time.Sleep(time.Second * (3 + time.Duration(rand.Intn(3))))
 		} else if meta.ContentLength > MB_10 {
-			tickTimer = time.NewTicker(30 * time.Second)
+			tickTimer = time.NewTicker(40 * time.Second)
 			time.Sleep(time.Second * (2 + time.Duration(rand.Intn(3))))
 		} else {
-			tickTimer = time.NewTicker(20 * time.Second)
+			tickTimer = time.NewTicker(30 * time.Second)
 			time.Sleep(time.Second * (1 + time.Duration(rand.Intn(2))))
 		}
 	}

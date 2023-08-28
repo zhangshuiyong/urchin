@@ -2,6 +2,8 @@ package urchin_dataset
 
 import (
 	"crypto/md5"
+	"d7y.io/dragonfly/v2/client/config"
+	"d7y.io/dragonfly/v2/client/daemon/urchin_dataset_vesion"
 	"d7y.io/dragonfly/v2/client/util"
 	logger "d7y.io/dragonfly/v2/internal/dflog"
 	"encoding/hex"
@@ -13,8 +15,30 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+var conf *ConfInfo
+var once sync.Once
+
+type ConfInfo struct {
+	Opt       *config.DaemonOption
+	DynConfig config.Dynconfig
+}
+
+func SetSetConfInfo(opt *config.DaemonOption, dynConfig config.Dynconfig) {
+	once.Do(func() {
+		conf = &ConfInfo{
+			Opt:       opt,
+			DynConfig: dynConfig,
+		}
+	})
+}
+
+func getConfInfo() ConfInfo {
+	return *conf
+}
 
 // CreateDataSet POST /api/v1/dataset
 func CreateDataSet(ctx *gin.Context) {
@@ -31,9 +55,33 @@ func CreateDataSet(ctx *gin.Context) {
 		cacheStrategy = form.CacheStrategy
 		dataSetTags   = form.Tags
 	)
-	dataSetID := GetUUID()
 
-	redisClient := util.NewRedisStorage(RedisClusterIP, "dragonfly", false)
+	if int(replica) > getConfInfo().Opt.ObjectStorage.MaxReplicas {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": "replica is large than max replicas"})
+		return
+	}
+
+	schedulers, err := getConfInfo().DynConfig.GetSchedulers()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	var availableSeedPeerCnt uint = 0
+	for _, scheduler := range schedulers {
+		for _, seedPeer := range scheduler.SeedPeers {
+			if getConfInfo().Opt.Host.AdvertiseIP.String() != seedPeer.Ip && seedPeer.ObjectStoragePort > 0 {
+				availableSeedPeerCnt++
+			}
+		}
+	}
+	if replica > availableSeedPeerCnt {
+		ctx.JSON(http.StatusUnprocessableEntity, gin.H{"errors": "replica is large than available seed peer hosts"})
+		return
+	}
+
+	dataSetID := GetUUID()
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	datasetKey := redisClient.MakeStorageKey([]string{dataSetID}, StoragePrefixDataset)
 	values := make(map[string]interface{})
 	values["id"] = dataSetID
@@ -52,7 +100,7 @@ func CreateDataSet(ctx *gin.Context) {
 	curTime := time.Now().Unix()
 	values["create_time"] = strconv.FormatInt(curTime, 10)
 	values["update_time"] = strconv.FormatInt(curTime, 10)
-	err := redisClient.SetMapElements(datasetKey, values)
+	err = redisClient.SetMapElements(datasetKey, values)
 	if err != nil {
 		logger.Warnf("CreateDataSet set map elements err:%v, dataSetID:%s", err, dataSetID)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
@@ -87,6 +135,12 @@ func CreateDataSet(ctx *gin.Context) {
 		}
 	}
 
+	_ = urchin_dataset_vesion.CreateDataSetVersionImpl(dataSetID, urchin_dataset_vesion.UrchinDataSetVersionInfo{
+		ID:       DefaultDatasetVersion,
+		Name:     "default dataset version",
+		CreateAt: curTime,
+	})
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"status_code": 0,
 		"status_msg":  "succeed",
@@ -117,7 +171,7 @@ func UpdateDataSet(ctx *gin.Context) {
 		dataSetTags   = form.Tags
 	)
 
-	err := updateDataSet(dataSetID, dataSetDesc, replica, cacheStrategy, dataSetTags, []UrchinEndpoint{}, []UrchinEndpoint{})
+	err := UpdateDataSetImpl(dataSetID, dataSetDesc, replica, cacheStrategy, dataSetTags, []UrchinEndpoint{}, []UrchinEndpoint{})
 	if err != nil {
 		logger.Warnf("UpdateDataSet err:%v, dataSetID:%s, dataSetDesc:%s", err, dataSetID, dataSetDesc)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
@@ -143,49 +197,11 @@ func GetDataSet(ctx *gin.Context) {
 		dataSetID = params.ID
 	)
 
-	redisClient := util.NewRedisStorage(RedisClusterIP, "dragonfly", false)
-	datasetKey := redisClient.MakeStorageKey([]string{dataSetID}, StoragePrefixDataset)
-	elements, err := redisClient.ReadMap(datasetKey)
+	dataset, err := GetDataSetImpl(dataSetID)
 	if err != nil {
-		logger.Warnf("GetDataSet read map element err:%v, dataSetID:%s", err, dataSetID)
+		logger.Warnf("GetDataSet fail, err:%v, dataSetID:%s", err, dataSetID)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
 		return
-	}
-
-	if string(elements["id"]) != dataSetID {
-		logger.Warnf("GetDataSet can not found dataSetID:%s", dataSetID)
-		ctx.JSON(http.StatusNotFound, gin.H{"errors": err.Error()})
-		return
-	}
-
-	err = nil
-	var dataset UrchinDataSetInfo
-	for k, v := range elements {
-		if k == "tags" {
-			dataset.Tags = strings.Split(string(v), "_")
-		} else if k == "share_blob_sources" {
-			err = json.Unmarshal(v, &dataset.ShareBlobSources)
-		} else if k == "share_blob_caches" {
-			err = json.Unmarshal(v, &dataset.ShareBlobCaches)
-		} else if k == "id" {
-			dataset.Id = string(v)
-		} else if k == "name" {
-			dataset.Name = string(v)
-		} else if k == "desc" {
-			dataset.Desc = string(v)
-		} else if k == "replica" {
-			var tmpReplica int
-			tmpReplica, err = strconv.Atoi(string(v))
-			dataset.Replica = uint(tmpReplica)
-		} else if k == "cache_strategy" {
-			dataset.CacheStrategy = string(v)
-		}
-
-		if err != nil {
-			logger.Warnf("GetDataSet json unmarshal err:%v, dataSetID:%s", err, dataSetID)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
-			return
-		}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -224,7 +240,7 @@ func ListDataSets(ctx *gin.Context) {
 	}
 
 	var datasets []UrchinDataSetInfo
-	redisClient := util.NewRedisStorage(RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	if searchKey == "" {
 		if orderBy == "" {
 			var rangeLower, rangeUpper int64
@@ -379,7 +395,7 @@ func DeleteDataSet(ctx *gin.Context) {
 		dataSetID = params.ID
 	)
 
-	redisClient := util.NewRedisStorage(RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	datasetKey := redisClient.MakeStorageKey([]string{dataSetID}, StoragePrefixDataset)
 
 	dataSetName, err := redisClient.GetMapElement(datasetKey, "name")
@@ -468,11 +484,18 @@ func MapToSlice(m map[string]bool) []string {
 	return s
 }
 
-func updateDataSet(dataSetID, dataSetDesc string, replica uint, cacheStrategy string, dataSetTags []string,
+func UpdateDataSetImpl(dataSetID, dataSetDesc string, replica uint, cacheStrategy string, dataSetTags []string,
 	shareBlobSources, shareBlobCaches []UrchinEndpoint) error {
 	logger.Infof("updateDataSet dataSetID:%s, desc:%s replica:%d cacheStrategy:%s tags:%v shareBlobSources:%v shareBlobCaches:%v",
 		dataSetID, dataSetDesc, replica, cacheStrategy, dataSetTags, shareBlobSources, shareBlobCaches)
-	redisClient := util.NewRedisStorage(RedisClusterIP, "dragonfly", false)
+
+	_, err := GetDataSetImpl(dataSetID)
+	if err != nil {
+		logger.Warnf("updateDataSet get dataSet err:%v, dataSetID:%s", err, dataSetID)
+		return err
+	}
+
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	datasetKey := redisClient.MakeStorageKey([]string{dataSetID}, StoragePrefixDataset)
 	if len(dataSetDesc) > 0 {
 		err := redisClient.SetMapElement(datasetKey, "desc", []byte(dataSetDesc))
@@ -551,6 +574,56 @@ func updateDataSet(dataSetID, dataSetDesc string, replica uint, cacheStrategy st
 
 	logger.Infof("updateDataSet dataSetID:%s complete", dataSetID)
 	return nil
+}
+
+func GetDataSetImpl(dataSetID string) (UrchinDataSetInfo, error) {
+	if dataSetID == "" {
+		return UrchinDataSetInfo{}, fmt.Errorf("dataSet ID is empty")
+	}
+
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
+	datasetKey := redisClient.MakeStorageKey([]string{dataSetID}, StoragePrefixDataset)
+	elements, err := redisClient.ReadMap(datasetKey)
+	if err != nil {
+		logger.Warnf("GetDataSetImpl read map element err:%v, dataSetID:%s", err, dataSetID)
+		return UrchinDataSetInfo{}, err
+	}
+
+	if string(elements["id"]) != dataSetID {
+		logger.Warnf("GetDataSetImpl can not found dataSetID:%s", dataSetID)
+		return UrchinDataSetInfo{}, err
+	}
+
+	err = nil
+	var dataset UrchinDataSetInfo
+	for k, v := range elements {
+		if k == "tags" {
+			dataset.Tags = strings.Split(string(v), "_")
+		} else if k == "share_blob_sources" {
+			err = json.Unmarshal(v, &dataset.ShareBlobSources)
+		} else if k == "share_blob_caches" {
+			err = json.Unmarshal(v, &dataset.ShareBlobCaches)
+		} else if k == "id" {
+			dataset.Id = string(v)
+		} else if k == "name" {
+			dataset.Name = string(v)
+		} else if k == "desc" {
+			dataset.Desc = string(v)
+		} else if k == "replica" {
+			var tmpReplica int
+			tmpReplica, err = strconv.Atoi(string(v))
+			dataset.Replica = uint(tmpReplica)
+		} else if k == "cache_strategy" {
+			dataset.CacheStrategy = string(v)
+		}
+
+		if err != nil {
+			logger.Warnf("GetDataSetImpl json unmarshal err:%v, dataSetID:%s", err, dataSetID)
+			return UrchinDataSetInfo{}, err
+		}
+	}
+
+	return dataset, nil
 }
 
 func getDataSetById(dataSetID string, redisClient *util.RedisStorage) (UrchinDataSetInfo, error) {

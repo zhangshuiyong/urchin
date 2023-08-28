@@ -32,6 +32,22 @@ import (
 	"time"
 )
 
+const (
+	// AsyncWriteBack writes the object asynchronously to the backend.
+	AsyncWriteBack = iota
+
+	// WriteBack writes the object synchronously to the backend.
+	WriteBack
+
+	// Ephemeral only writes the object to the dfdaemon.
+	// It is only provided for creating temporary objects between peers,
+	// and users are not allowed to use this mode.
+	Ephemeral
+
+	// Persistence writes the object to the seed-peer backend.
+	ReplicaObjectStorage
+)
+
 // ObjectMetadata provides metadata of object.
 type ObjectMetadata struct {
 	// Key is object key.
@@ -328,7 +344,7 @@ func CheckTargetBucketIsInControl(config *config.DaemonOption, targetEndpoint, t
 	}
 
 	if !targetBucketIsInControl {
-		logger.Errorf("Peer binding targetEndpoint %s  have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
+		logger.Errorf("Peer binding targetEndpoint %s have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
 		return false
 	}
 
