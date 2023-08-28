@@ -328,7 +328,7 @@ func CheckTargetBucketIsInControl(config *config.DaemonOption, targetEndpoint, t
 	}
 
 	if !targetBucketIsInControl {
-		logger.Errorf("Peer binding targetEndpoint %s  have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
+		logger.Errorf("Peer binding targetEndpoint %s have not allowed the targetBucketName:%s", targetEndpoint, targetBucketName)
 		return false
 	}
 
