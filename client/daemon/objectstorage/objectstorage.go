@@ -70,7 +70,7 @@ var GinLogFileName = "gin-object-stroage.log"
 
 const (
 	// defaultSignExpireTime is default expire of sign url.
-	defaultSignExpireTime = 2 * 60 * time.Minute
+	defaultSignExpireTime = 5 * time.Minute
 )
 
 // ObjectStorage is the interface used for object storage server.
@@ -117,7 +117,7 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 		return nil, err
 	}
 
-	urchindataset.SetSetConfInfo(cfg, dynconfig)
+	urchindataset.SetDataSetConfInfo(cfg, dynconfig)
 
 	o := &objectStorage{
 		config:              cfg,
@@ -691,15 +691,6 @@ func (o *objectStorage) importObjectToBackend(ctx context.Context, storageName, 
 	} else {
 		err := client.PutObject(ctx, bucketName, objectKey, dgst.String(), f)
 		if err != nil {
-			if strings.Contains(err.Error(), "408 Request Timeout") {
-				time.Sleep(time.Second * 3)
-				err = client.PutObject(ctx, bucketName, objectKey, dgst.String(), f)
-				if err != nil {
-					return err
-				}
-
-				return nil
-			}
 			return err
 		}
 	}

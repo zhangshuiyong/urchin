@@ -27,7 +27,7 @@ type ConfInfo struct {
 	DynConfig config.Dynconfig
 }
 
-func SetSetConfInfo(opt *config.DaemonOption, dynConfig config.Dynconfig) {
+func SetDataSetConfInfo(opt *config.DaemonOption, dynConfig config.Dynconfig) {
 	once.Do(func() {
 		conf = &ConfInfo{
 			Opt:       opt,
