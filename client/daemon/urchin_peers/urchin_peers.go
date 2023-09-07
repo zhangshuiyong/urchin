@@ -72,7 +72,7 @@ func (up *UrchinPeer) GetPeer(ctx *gin.Context) {
 	}
 	logger.Infof("GetPeer peerID id:%s %s", peerID)
 
-	redisClient := util.NewRedisStorage(urchin_dataset.RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	peerInfo, err := getPeerInfoById(peerID, redisClient)
 	if err != nil {
 		logger.Warnf("GetPeer fail, peerId:%s", peerID)
@@ -128,7 +128,7 @@ func GetUrchinPeers(ctx *gin.Context) {
 	}
 
 	var peerInfos []UrchinPeerInfo
-	redisClient := util.NewRedisStorage(urchin_dataset.RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	peersInfoCreateQue := redisClient.MakeStorageKey([]string{PeersInfoCreateQue}, storagePrefixPeer)
 	if searchKey == "" {
 		if orderBy == "" {
@@ -262,7 +262,7 @@ func GetUrchinPeers(ctx *gin.Context) {
 }
 
 func (up *UrchinPeer) initReportPeerInfo() error {
-	redisClient := util.NewRedisStorage(urchin_dataset.RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	peerId := up.PeerHost.Id
 	peerInfoKey := redisClient.MakeStorageKey([]string{up.PeerHost.Id}, storagePrefixPeer)
 	values := make(map[string]interface{})
@@ -305,7 +305,7 @@ func (up *UrchinPeer) initReportPeerInfo() error {
 }
 
 func (up *UrchinPeer) periodReportPeerInfo() {
-	redisClient := util.NewRedisStorage(urchin_dataset.RedisClusterIP, "dragonfly", false)
+	redisClient := util.NewRedisStorage(util.RedisClusterIP, util.RedisClusterPwd, false)
 	peersInfoExpireLock := redisClient.MakeStorageKey([]string{PeersInfoExpireLock}, storagePrefixPeer)
 	peersInfoExpireQue := redisClient.MakeStorageKey([]string{PeersInfoExpireQue}, storagePrefixPeer)
 

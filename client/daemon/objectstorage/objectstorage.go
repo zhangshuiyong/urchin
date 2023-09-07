@@ -117,6 +117,8 @@ func New(cfg *config.DaemonOption, dynconfig config.Dynconfig, peerHost *schedul
 		return nil, err
 	}
 
+	urchindataset.SetDataSetConfInfo(cfg, dynconfig)
+
 	o := &objectStorage{
 		config:              cfg,
 		dynconfig:           dynconfig,

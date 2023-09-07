@@ -14,6 +14,9 @@ const (
 	keySeparator     = ":"
 )
 
+var RedisClusterIP = []string{"192.168.181.130:6379"}
+var RedisClusterPwd = "dragonfly"
+
 type RedisStorage struct {
 	client redis.Cmdable
 }
