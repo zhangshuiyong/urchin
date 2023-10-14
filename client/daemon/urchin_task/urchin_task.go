@@ -382,3 +382,45 @@ func (urtm *UrchinTaskManager) GetTasks(ctx *gin.Context) {
 
 	return
 }
+
+type SuccessResult struct {
+	Size uint64 `gorm:"column:size;comment:size" json:"size"`
+}
+
+func (urtm *UrchinTaskManager) GetTasksStatistics(ctx *gin.Context) {
+
+	var successCount int64
+	var successResults []SuccessResult
+	var totalCount int64
+	if err := urtm.db.DB.WithContext(ctx).Model(&UrchinTask{}).Where("state=?", "Succeeded").Count(&successCount).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	if err := urtm.db.DB.WithContext(ctx).Model(&UrchinTask{}).Select("SUM(content_length) as size").Where("state=?", "Succeeded").Find(&successResults).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	if err := urtm.db.DB.WithContext(ctx).Model(&UrchinTask{}).Count(&totalCount).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"errors": err.Error()})
+		return
+	}
+
+	var totalSize uint64
+	if len(successResults) > 0 {
+		totalSize = successResults[0].Size
+	} else {
+		totalSize = 0
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status_code":  0,
+		"status_msg":   "",
+		"success_file": successCount,
+		"total_file":   totalCount,
+		"total_size":   totalSize,
+	})
+
+	return
+}

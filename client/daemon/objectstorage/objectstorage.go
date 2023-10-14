@@ -220,6 +220,7 @@ func (o *objectStorage) initRouter(cfg *config.DaemonOption, logDir string) *gin
 
 	api.GET("/task/:task_id", o.urchinTaskManager.GetTask)
 	api.GET("/tasks", o.urchinTaskManager.GetTasks)
+	api.GET("/tasks/statistics", o.urchinTaskManager.GetTasksStatistics)
 	api.PUT("/file/upload", o.urchinFileManager.UploadFile)
 	api.GET("/file/stat", o.urchinFileManager.StatFile)
 
